@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     session_db_name: str = "sessions.db"
     semantic_db_name: str = "memory_embeddings.db"
 
+    whisper_cli: Path = Path("~/AI/whisper.cpp/build/bin/whisper-cli")
+    whisper_model: Path = Path("~/AI/whisper.cpp/models/ggml-base.bin")
+    whisper_language: str = "auto"
+    whisper_no_gpu: bool = False
+    ffmpeg_bin: str = "ffmpeg"
+    piper_model: Path = Path("~/.local/share/murn/voices/pt_BR-faber-medium.onnx")
+    audio_max_mb: int = 25
+
     orbital_url: str | None = None
     agent_max_steps: int = 8
 
@@ -40,6 +48,10 @@ class Settings(BaseSettings):
     @property
     def semantic_db(self) -> Path:
         return self.data_dir.expanduser() / self.semantic_db_name
+
+    @property
+    def audio_dir(self) -> Path:
+        return self.data_dir.expanduser() / "audio"
 
 
 settings = Settings()
