@@ -4,18 +4,22 @@ build-backend = "hatchling.build"
 
 [project]
 name = "murn-ai"
-version = "0.3.0"
-description = "Local-first AI agent with Obsidian memory, Ollama and ComfyUI."
+version = "0.4.0"
+description = "Local-first AI agent with Obsidian memory, Ollama, ComfyUI and local voice."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1",
   "httpx>=0.28,<1",
   "pydantic-settings>=2.8,<3",
+  "python-multipart>=0.0.20,<1",
   "uvicorn[standard]>=0.34,<1",
 ]
 
 [project.optional-dependencies]
+voice = [
+  "piper-tts>=1.4,<2",
+]
 dev = [
   "pytest>=8,<9",
   "ruff>=0.12,<1",
