@@ -6,16 +6,24 @@ from fastapi.responses import StreamingResponse
 from murn.agent import Agent
 from murn.config import settings
 from murn.memory.obsidian import ObsidianMemory
+from murn.memory.semantic import SemanticMemory
 from murn.providers.comfyui import ComfyUIProvider
+from murn.providers.embeddings import OllamaEmbeddingProvider
 from murn.providers.ollama import OllamaProvider
 from murn.schemas import ChatRequest, ChatResponse, ImageGenerateRequest, SessionCreateRequest
 from murn.sessions import SessionStore
 from murn.tools.registry import ToolRegistry
 
-app = FastAPI(title="murn.", version="0.2.0")
+app = FastAPI(title="murn.", version="0.3.0")
 
 llm = OllamaProvider(settings.ollama_url, settings.ollama_model)
+embedding_provider = OllamaEmbeddingProvider(settings.ollama_url, settings.embedding_model)
 memory = ObsidianMemory(settings.obsidian_vault, settings.obsidian_memory_dir)
+semantic_memory = SemanticMemory(
+    settings.obsidian_vault,
+    settings.semantic_db,
+    embedding_provider,
+)
 images = ComfyUIProvider(
     settings.comfyui_url,
     settings.comfy_workflow_path,
@@ -25,7 +33,7 @@ images = ComfyUIProvider(
     settings.comfy_latent_node,
 )
 sessions = SessionStore(settings.session_db)
-tools = ToolRegistry(memory, images)
+tools = ToolRegistry(memory, semantic_memory, images)
 agent = Agent(llm, tools, settings.agent_max_steps)
 
 
@@ -47,10 +55,13 @@ async def health() -> dict[str, object]:
         "murn": True,
         "model": settings.ollama_model,
         "ollama": await llm.health(),
+        "embedding_model": settings.embedding_model,
+        "embeddings": await embedding_provider.health(),
         "comfyui": await images.health(),
         "comfyui_configured": images.configured,
         "obsidian_vault": str(settings.obsidian_vault),
         "session_db": str(settings.session_db),
+        "semantic_db": str(settings.semantic_db),
     }
 
 
@@ -113,9 +124,24 @@ async def chat_stream(request: ChatRequest):
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
+@app.post("/v1/memory/reindex")
+async def memory_reindex():
+    try:
+        return await semantic_memory.reindex()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.get("/v1/memory/search")
 async def memory_search(q: str = Query(min_length=1), limit: int = Query(5, ge=1, le=10)):
-    return {"results": memory.search(q, limit)}
+    try:
+        return {"mode": "semantic", "results": await semantic_memory.search(q, limit)}
+    except Exception as exc:
+        return {
+            "mode": "keyword-fallback",
+            "semantic_error": str(exc),
+            "results": memory.search(q, limit),
+        }
 
 
 @app.post("/v1/images/generate")
