@@ -10,6 +10,8 @@ use std::{
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
+const DESKTOP_BACKEND_PORT: u16 = 7332;
+
 fn configured_url() -> String {
     if let Ok(value) = env::var("MURN_DESKTOP_URL") {
         let trimmed = value.trim();
@@ -28,18 +30,29 @@ fn configured_url() -> String {
         }
     }
 
-    "http://127.0.0.1:7331".to_string()
+    format!("http://127.0.0.1:{DESKTOP_BACKEND_PORT}")
 }
 
-fn start_backend_service() {
+fn start_backend_services() {
+    // murn.service keeps the LAN/mobile endpoint alive (HTTPS when configured).
     let _ = Command::new("systemctl")
         .args(["--user", "start", "murn.service"])
         .status();
+
+    // The desktop webview deliberately uses a loopback-only HTTP endpoint.
+    // WebKit can reject a locally generated TLS certificate even when the
+    // browser/phone trusts the same CA, which results in a blank native window.
+    let _ = Command::new("systemctl")
+        .args(["--user", "start", "murn-desktop-backend.service"])
+        .status();
 }
 
-fn backend_ready() -> bool {
-    let address: SocketAddr = "127.0.0.1:7331".parse().expect("valid murn address");
-    for _ in 0..32 {
+fn desktop_backend_ready() -> bool {
+    let address: SocketAddr = format!("127.0.0.1:{DESKTOP_BACKEND_PORT}")
+        .parse()
+        .expect("valid murn desktop address");
+
+    for _ in 0..40 {
         if TcpStream::connect_timeout(&address, Duration::from_millis(180)).is_ok() {
             return true;
         }
@@ -51,9 +64,9 @@ fn backend_ready() -> bool {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            start_backend_service();
+            start_backend_services();
 
-            let url = if backend_ready() {
+            let url = if desktop_backend_ready() {
                 WebviewUrl::External(configured_url().parse()?)
             } else {
                 WebviewUrl::App("offline.html".into())
