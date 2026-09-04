@@ -1,10 +1,11 @@
 # Local voice setup
 
-murn. v0.4 uses:
+murn. v0.4.1 uses:
 
 - **whisper.cpp** for local speech-to-text
 - **ffmpeg** to normalize uploaded audio to 16 kHz mono PCM WAV
 - **Piper** for local text-to-speech
+- **sounddevice + PortAudio** for the optional continuous microphone client
 
 The API exposes:
 
@@ -39,7 +40,13 @@ This should create:
 
 The multilingual `base` model is a good first test. You can later switch to `small`, `medium`, or another compatible model by changing `MURN_WHISPER_MODEL`.
 
-## 2. Install Piper into the murn. venv
+## 2. Install Piper and microphone support into the murn. venv
+
+On Arch, install PortAudio for microphone capture:
+
+```fish
+sudo pacman -S --needed portaudio
+```
 
 From the murn. repository:
 
@@ -128,7 +135,7 @@ Play it on PipeWire:
 pw-play murn.wav
 ```
 
-## 7. Full voice chat
+## 7. Full voice chat API
 
 ```fish
 curl -X POST http://127.0.0.1:7331/v1/voice/chat \
@@ -157,27 +164,84 @@ curl -X POST http://127.0.0.1:7331/v1/voice/chat \
 
 Generated voice responses are stored under `.murn/audio/generated/` and `.murn/` is ignored by Git.
 
+## 8. Continuous microphone conversation
+
+Keep the murn. backend running in one terminal:
+
+```fish
+cd ~/Projects/murn
+source .venv/bin/activate.fish
+uvicorn murn.main:app --reload --host 127.0.0.1 --port 7331
+```
+
+In another terminal:
+
+```fish
+cd ~/Projects/murn
+source .venv/bin/activate.fish
+murn-voice
+```
+
+The client calibrates the microphone for about a second, then loops automatically:
+
+```text
+listen -> detect speech -> detect silence -> upload -> murn. -> download WAV -> play -> listen
+```
+
+It keeps the `session_id` returned by the first turn, so every spoken turn belongs to the same conversation until the client exits.
+
+Stop it with `Ctrl+C`.
+
+Useful options:
+
+```fish
+# List PortAudio input/output devices
+murn-voice --list-devices
+
+# Select microphone by index
+murn-voice --device 3
+
+# One-turn test
+murn-voice --once
+
+# Let Whisper auto-detect the language
+murn-voice --language auto
+
+# Wait longer before deciding you finished speaking
+murn-voice --silence-ms 1200
+
+# Manually tune voice activity threshold if automatic calibration is poor
+murn-voice --threshold 500
+```
+
+The client does not listen while murn.'s generated WAV is playing. That prevents the assistant from immediately hearing its own voice and replying to itself.
+
 ## Architecture
 
 ```text
-microphone / audio file
-        |
-        v
-      ffmpeg
-        |
-        v
-   whisper.cpp
-        |
-        v
-      murn.
-   /    |    \
-Llama memory tools
-        |
-        v
-      Piper
-        |
-        v
-       WAV
+microphone
+   |
+   v
+local VAD / end-of-speech detection
+   |
+   v
+16 kHz WAV
+   |
+   v
+POST /v1/voice/chat
+   |
+   +--> ffmpeg -> whisper.cpp -> text
+   |                         |
+   |                         v
+   |                       murn.
+   |                  /      |      \
+   |               Llama   memory   tools
+   |                         |
+   |                         v
+   +<---------------------- Piper
+   |
+   v
+WAV -> pw-play -> microphone listening resumes
 ```
 
-The STT and TTS providers are separate from the agent core, so another local backend can replace either one later without redesigning sessions, memory, or tools.
+The STT, TTS, and microphone client are separate from the agent core, so another local backend can replace any of them later without redesigning sessions, memory, or tools.
