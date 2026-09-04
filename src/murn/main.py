@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from murn.agent import Agent
@@ -25,7 +25,7 @@ from murn.tools.registry import ToolRegistry
 
 UI_DIR = Path(__file__).parent / "ui"
 
-app = FastAPI(title="murn.", version="0.5.0")
+app = FastAPI(title="murn.", version="0.5.1")
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 llm = OllamaProvider(settings.ollama_url, settings.ollama_model)
@@ -222,6 +222,23 @@ async def generate_image(request: ImageGenerateRequest):
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/v1/images/view")
+async def view_generated_image(
+    filename: str = Query(min_length=1),
+    subfolder: str = Query(default=""),
+    image_type: str = Query(default="output", alias="type"),
+):
+    try:
+        content, media_type = await images.fetch_image(filename, subfolder, image_type)
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Image fetch failed: {exc}") from exc
 
 
 @app.post("/v1/audio/transcribe")
