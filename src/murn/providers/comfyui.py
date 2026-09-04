@@ -55,6 +55,35 @@ class ComfyUIProvider:
             raise RuntimeError(f"ComfyUI node {node_id!r} was not found in the workflow.")
         return workflow[node_id]
 
+    @staticmethod
+    def _murn_image_url(filename: str, subfolder: str, image_type: str) -> str:
+        params = {
+            "filename": filename,
+            "subfolder": subfolder,
+            "type": image_type,
+        }
+        return f"/v1/images/view?{urlencode(params)}"
+
+    async def fetch_image(
+        self,
+        filename: str,
+        subfolder: str = "",
+        image_type: str = "output",
+    ) -> tuple[bytes, str]:
+        if not filename or "\x00" in filename:
+            raise ValueError("Invalid ComfyUI image filename.")
+
+        params = {
+            "filename": filename,
+            "subfolder": subfolder,
+            "type": image_type,
+        }
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(f"{self.base_url}/view", params=params)
+            response.raise_for_status()
+            media_type = response.headers.get("content-type", "image/png").split(";", 1)[0]
+            return response.content, media_type
+
     async def generate(
         self,
         prompt: str,
@@ -110,15 +139,19 @@ class ComfyUIProvider:
                     images: list[dict[str, str]] = []
                     for node_output in outputs.values():
                         for image in node_output.get("images", []):
-                            params = {
-                                "filename": image["filename"],
-                                "subfolder": image.get("subfolder", ""),
-                                "type": image.get("type", "output"),
-                            }
+                            filename = str(image["filename"])
+                            subfolder = str(image.get("subfolder", ""))
+                            image_type = str(image.get("type", "output"))
                             images.append(
                                 {
-                                    **params,
-                                    "url": f"{self.base_url}/view?{urlencode(params)}",
+                                    "filename": filename,
+                                    "subfolder": subfolder,
+                                    "type": image_type,
+                                    "url": self._murn_image_url(
+                                        filename,
+                                        subfolder,
+                                        image_type,
+                                    ),
                                 }
                             )
                     if images:
