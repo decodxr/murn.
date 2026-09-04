@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#050607" />
+  <title>murn.</title>
+  <link rel="stylesheet" href="/ui/assets/murn.css" />
+</head>
+<body class="desktop-body">
+  <div class="desktop-app">
+    <header class="desktop-topbar">
+      <a class="brand" href="/" aria-label="murn home">
+        <span class="brand-word">murn<span class="brand-dot">.</span></span>
+        <span class="brand-subtitle">LOCAL AI ASSISTANT</span>
+      </a>
+
+      <div class="system-strip" aria-label="system status">
+        <span class="status-dot"></span>
+        <span id="desktop-local-status">local</span>
+        <span class="slash">/</span>
+        <span id="desktop-model">llama3.1</span>
+        <span class="slash">/</span>
+        <span id="desktop-voice">voice ready</span>
+        <span class="slash">/</span>
+        <span id="desktop-connection">connected</span>
+        <button class="icon-button settings-button" id="open-settings" aria-label="settings">⚙</button>
+      </div>
+
+      <div class="topbar-motto">PRIVATE &nbsp;·&nbsp; FAST &nbsp;·&nbsp; YOURS</div>
+    </header>
+
+    <div class="desktop-grid">
+      <aside class="sidebar panel">
+        <div class="sidebar-controls">
+          <label class="search-box">
+            <span class="search-icon">⌕</span>
+            <input id="session-search" type="search" placeholder="search conversations..." autocomplete="off" />
+            <span class="shortcut">⌘ K</span>
+          </label>
+          <button class="new-chat-button" id="new-chat"><span>＋</span> new chat</button>
+        </div>
+
+        <div class="session-groups" id="session-groups">
+          <div class="sessions-loading">loading conversations...</div>
+        </div>
+
+        <button class="all-conversations" id="all-conversations">
+          <span class="infinity">∞</span>
+          <span>ALL CONVERSATIONS</span>
+        </button>
+      </aside>
+
+      <main class="conversation panel">
+        <div class="conversation-header">
+          <div>
+            <h1 id="conversation-title">New Chat</h1>
+            <p id="conversation-meta">local &nbsp;·&nbsp; private &nbsp;·&nbsp; ready</p>
+          </div>
+          <div class="breadcrumbs">IDEAS &nbsp;&gt;&nbsp; PROMPTS &nbsp;&gt;&nbsp; REALITY</div>
+        </div>
+
+        <div class="conversation-layout">
+          <section class="message-list" id="message-list" aria-live="polite">
+            <div class="welcome-card" id="welcome-card">
+              <div class="welcome-mark">m<span>.</span></div>
+              <div>
+                <h2>murn. is ready.</h2>
+                <p>ask, create, remember, automate — locally.</p>
+              </div>
+            </div>
+          </section>
+
+          <aside class="mood-rail" aria-hidden="true">
+            <div class="rail-copy">
+              THINK<br />
+              LISTEN<br />
+              CREATE<br />
+              AUTOMATE<br />
+              LOCALLY<br />
+              ALWAYS.<br />
+              <span>—</span>
+            </div>
+            <div class="dot-field"></div>
+            <div class="rail-quote">
+              A QUIETER<br />
+              INTERNET<br />
+              IS A BRIGHTER<br />
+              FUTURE.<br />
+              <span>—</span>
+            </div>
+          </aside>
+        </div>
+
+        <form class="composer" id="composer">
+          <button type="button" class="composer-icon attach-button" title="attachments coming soon">⌕</button>
+          <textarea id="message-input" rows="1" placeholder="ask murn..." aria-label="message"></textarea>
+          <div class="composer-actions">
+            <button type="button" class="composer-icon mic-button" id="desktop-mic" aria-label="voice input">♩</button>
+            <div class="composer-divider"></div>
+            <button type="submit" class="send-button" id="send-button" aria-label="send">↑</button>
+          </div>
+        </form>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="settings-modal" id="settings-modal">
+    <form method="dialog" class="settings-card">
+      <div class="settings-heading">
+        <div>
+          <span class="settings-kicker">MURN / SYSTEM</span>
+          <h2>local control</h2>
+        </div>
+        <button class="modal-close" value="close" aria-label="close">×</button>
+      </div>
+
+      <div class="settings-grid">
+        <div class="settings-row"><span>model</span><strong id="settings-model">—</strong></div>
+        <div class="settings-row"><span>ollama</span><strong id="settings-ollama">—</strong></div>
+        <div class="settings-row"><span>comfyui</span><strong id="settings-comfy">—</strong></div>
+        <div class="settings-row"><span>voice</span><strong id="settings-voice">—</strong></div>
+      </div>
+
+      <div class="mobile-link-card">
+        <span class="settings-kicker">PHONE COMPANION</span>
+        <p>Open this address on the phone to use the voice-only interface.</p>
+        <div class="copy-line">
+          <code id="mobile-url">—</code>
+          <button type="button" id="copy-mobile-url">copy</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+  <script src="/ui/assets/desktop.js" defer></script>
+</body>
+</html>
