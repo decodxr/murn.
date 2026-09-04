@@ -1,99 +1,43 @@
 # murn.
 
-**murn.** is a local-first AI agent with memory, tools, persistent conversations, streaming, browser integration, and image generation.
+**murn.** is a local-first AI agent with memory, tools, persistent conversations, streaming, image generation, and local voice.
 
 Current stack:
 
-- **Ollama** for local language models (default: `llama3.1:8b`)
-- **EmbeddingGemma via Ollama** for local semantic memory
-- **ComfyUI** for local image generation
-- **Obsidian** for durable Markdown memory
-- **SQLite** for local conversation sessions/history and the semantic-memory index
-- **FastAPI** for the local agent API
-- **Orbital** as an optional browser provider (adapter scaffold included)
+- **Ollama** — local language model (`llama3.1:8b` by default)
+- **EmbeddingGemma via Ollama** — semantic memory embeddings
+- **Obsidian** — durable Markdown memory
+- **SQLite** — conversation sessions and semantic-memory index
+- **ComfyUI** — local image generation
+- **whisper.cpp** — local speech-to-text
+- **Piper** — local text-to-speech
+- **FastAPI** — local API
+- **Orbital** — optional browser bridge scaffold
 
 ## Architecture
 
 ```text
-client / future UI
+                  murn.
+                    |
+        +-----------+-----------+
+        |           |           |
+      Ollama      SQLite       tools
+        |         /     \      /   \
+      Llama   sessions vectors memory ComfyUI
+        ^                   |       |
+        |                Obsidian images
         |
-        v
-    FastAPI API
+   whisper.cpp
+        ^
         |
-        v
-      murn.
-   /      |       \
-Ollama  SQLite    tools
-  |      /   \    /   \
-Llama sessions vectors Obsidian ComfyUI
-         ^             |       |
-         |             |     images
-   EmbeddingGemma -----+
+ microphone/audio
 
-Orbital -> optional browser bridge
+ murn. response -> Piper -> WAV
 ```
 
 ## Quick start
 
-### 1. Ollama
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.1:8b
-ollama pull embeddinggemma
-```
-
-Ollama API:
-
-```text
-http://127.0.0.1:11434
-```
-
-### 2. ComfyUI on Arch Linux
-
-Do not install Python packages globally with `pip --break-system-packages`. Use a virtual environment.
-
-```bash
-git clone https://github.com/Comfy-Org/ComfyUI.git ~/AI/ComfyUI
-cd ~/AI/ComfyUI
-python -m venv .venv
-```
-
-fish:
-
-```fish
-source .venv/bin/activate.fish
-```
-
-bash/zsh:
-
-```bash
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-python -m pip install --upgrade pip
-python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
-python -m pip install -r requirements.txt
-```
-
-Start ComfyUI:
-
-```bash
-python main.py --listen 127.0.0.1 --port 8188
-```
-
-Export a working txt2img workflow in **API format** and save it as:
-
-```text
-workflows/txt2img_api.json
-```
-
-Then configure the workflow node IDs in `.env`. See `workflows/README.md`.
-
-### 3. murn.
+Clone and create the local environment:
 
 ```bash
 git clone https://github.com/decodxr/murn..git ~/Projects/murn
@@ -107,34 +51,27 @@ fish:
 source .venv/bin/activate.fish
 ```
 
-Then:
+Install the core:
 
 ```bash
 python -m pip install -e .
 cp .env.example .env
 ```
 
-Configure `.env`, for example:
+For local TTS support, install the voice extra instead:
 
-```env
-MURN_OLLAMA_URL=http://127.0.0.1:11434
-MURN_OLLAMA_MODEL=llama3.1:8b
-MURN_EMBEDDING_MODEL=embeddinggemma
-
-MURN_OBSIDIAN_VAULT=/home/you/Documents/Obsidian/Murn
-MURN_OBSIDIAN_MEMORY_DIR=murn
-
-MURN_COMFYUI_URL=http://127.0.0.1:8188
-MURN_COMFY_WORKFLOW_PATH=workflows/txt2img_api.json
-MURN_COMFY_POSITIVE_NODE=67
-MURN_COMFY_NEGATIVE_NODE=71
-MURN_COMFY_SEED_NODE=70
-MURN_COMFY_LATENT_NODE=68
-
-MURN_DATA_DIR=.murn
-MURN_SESSION_DB_NAME=sessions.db
-MURN_SEMANTIC_DB_NAME=memory_embeddings.db
+```bash
+python -m pip install -e '.[voice]'
 ```
+
+Pull the default Ollama models:
+
+```bash
+ollama pull llama3.1:8b
+ollama pull embeddinggemma
+```
+
+Configure your Obsidian vault, ComfyUI workflow, and optional voice paths in `.env`.
 
 Start murn.:
 
@@ -154,25 +91,19 @@ http://127.0.0.1:7331/docs
 curl http://127.0.0.1:7331/health
 ```
 
-`embeddings` should be `true` after `embeddinggemma` has been pulled into Ollama.
+The response includes status for Ollama, embeddings, ComfyUI, STT, and TTS.
 
-## Persistent chat sessions
+## Chat and sessions
 
-A chat request without a `session_id` automatically creates a session:
-
-```bash
-curl -X POST http://127.0.0.1:7331/v1/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"My browser project is called Orbital."}'
-```
-
-The response contains a `session_id`. Reuse it on later messages:
+Normal chat:
 
 ```bash
 curl -X POST http://127.0.0.1:7331/v1/chat \
   -H 'Content-Type: application/json' \
-  -d '{"session_id":"PASTE_SESSION_ID_HERE","message":"What is my browser project called?"}'
+  -d '{"message":"Hello murn."}'
 ```
+
+The response includes a `session_id`. Reuse it in later requests to continue the same persistent conversation.
 
 List sessions:
 
@@ -180,100 +111,72 @@ List sessions:
 curl http://127.0.0.1:7331/v1/sessions
 ```
 
-Read one session:
-
-```bash
-curl http://127.0.0.1:7331/v1/sessions/PASTE_SESSION_ID_HERE
-```
-
-Session data is stored locally in:
-
-```text
-.murn/sessions.db
-```
-
-This is separate from Obsidian memory: SQLite stores the conversation history, while Obsidian stores durable long-term memories.
-
-## Streaming chat
-
-`/v1/chat/stream` returns newline-delimited JSON events as the model responds:
+Streaming chat:
 
 ```bash
 curl -N -X POST http://127.0.0.1:7331/v1/chat/stream \
   -H 'Content-Type: application/json' \
-  -d '{"message":"Explain what murn. can currently do."}'
+  -d '{"message":"Explain what you can do."}'
 ```
 
-Event types include:
-
-```text
-session
- token
- tool_start
- tool_result
- done
- error
-```
-
-The tool events are useful for a future UI to show things like image-generation progress without waiting for the final model response.
+Streaming events include `session`, `token`, `tool_start`, `tool_result`, `done`, and `error`.
 
 ## Semantic Obsidian memory
 
-murn. embeds Markdown chunks locally with Ollama and caches the vectors in:
-
-```text
-.murn/memory_embeddings.db
-```
-
-The source of truth stays in Obsidian. The SQLite vector cache can be deleted and rebuilt at any time.
-
-Build/update the index:
+Build/update the semantic index:
 
 ```bash
 curl -X POST http://127.0.0.1:7331/v1/memory/reindex
 ```
 
-Semantic search:
+Search by meaning rather than exact wording:
 
 ```bash
 curl --get http://127.0.0.1:7331/v1/memory/search \
-  --data-urlencode 'q=what was I doing with my browser project?'
+  --data-urlencode 'q=what browser am I developing?'
 ```
 
-The index automatically checks for changed Markdown files before each semantic search, so new or edited notes are picked up without manually rebuilding every time.
-
-If the embedding backend is unavailable, the agent's `memory_search` tool falls back to the older keyword search instead of losing memory access completely.
-
-murn.-generated memories live under:
-
-```text
-<your vault>/murn/memory/
-```
+Obsidian stays the source of truth. The local vector cache lives in `.murn/memory_embeddings.db` and can be rebuilt.
 
 ## Image generation
+
+After exporting and configuring a ComfyUI API workflow:
 
 ```bash
 curl -X POST http://127.0.0.1:7331/v1/images/generate \
   -H 'Content-Type: application/json' \
-  -d '{"prompt":"a quiet rainy street at night, documentary photography"}'
+  -d '{"prompt":"a quiet rainy street at night"}'
 ```
 
-Or ask the agent directly:
+The agent can also call image generation as a tool from `/v1/chat`.
 
-```bash
-curl -X POST http://127.0.0.1:7331/v1/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Generate an image of an abandoned gas station at night."}'
+## Local voice
+
+murn. v0.4 adds:
+
+```text
+POST /v1/audio/transcribe
+POST /v1/audio/speech
+GET  /v1/audio/files/{filename}
+POST /v1/voice/chat
+```
+
+Full Arch Linux setup, model downloads, configuration, and curl tests are in [`docs/voice.md`](docs/voice.md).
+
+The full voice path is:
+
+```text
+audio -> ffmpeg -> whisper.cpp -> murn. -> Piper -> WAV
 ```
 
 ## Current safety model
 
-murn. does not give the language model arbitrary shell access. Capabilities are exposed as explicit tools. Filesystem, terminal, Orbital, voice, and other integrations can therefore be added with their own permissions instead of handing the model unrestricted system access.
+murn. does **not** give the language model arbitrary shell access. Capabilities are exposed through explicit providers/tools so filesystem, terminal, Orbital, vision, and other integrations can each receive their own permissions and limits.
 
 ## Roadmap
 
-- speech-to-text (local Whisper-compatible backend)
-- text-to-speech
+- real-time microphone/VAD voice mode
+- streaming TTS while the model is still answering
 - Orbital native AI bridge
 - vision model support
 - desktop/chat UI
