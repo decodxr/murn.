@@ -8,7 +8,8 @@ CARGO_MANIFEST="$ROOT/desktop-app/src-tauri/Cargo.toml"
 BINARY_SOURCE="$ROOT/desktop-app/src-tauri/target/release/murn-desktop"
 BINARY_DEST="$HOME/.local/bin/murn-desktop"
 SERVICE_DIR="$HOME/.config/systemd/user"
-SERVICE_FILE="$SERVICE_DIR/murn.service"
+MOBILE_SERVICE_FILE="$SERVICE_DIR/murn.service"
+DESKTOP_SERVICE_FILE="$SERVICE_DIR/murn-desktop-backend.service"
 CONFIG_DIR="$HOME/.config/murn"
 URL_FILE="$CONFIG_DIR/desktop-url"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
@@ -18,6 +19,9 @@ KEY="$HOME/.local/share/murn/certs/murn-key.pem"
 TAURI_ICON_DIR="$ROOT/desktop-app/src-tauri/icons"
 TAURI_ICON="$TAURI_ICON_DIR/icon.png"
 SOURCE_ICON="$ROOT/desktop-app/murn.svg"
+DESKTOP_PORT=7332
+MOBILE_PORT=7331
+DESKTOP_URL="http://127.0.0.1:${DESKTOP_PORT}"
 
 say() { printf '\n\033[1;35m[murn.]\033[0m %s\n' "$*"; }
 fail() { printf '\n\033[1;31m[murn.] error:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -28,20 +32,29 @@ command -v systemctl >/dev/null 2>&1 || fail "systemctl was not found."
 command -v rsvg-convert >/dev/null 2>&1 || fail "rsvg-convert was not found. Install it with: sudo pacman -S --needed librsvg"
 
 systemctl --user stop murn.service >/dev/null 2>&1 || true
+systemctl --user stop murn-desktop-backend.service >/dev/null 2>&1 || true
 
-if command -v ss >/dev/null 2>&1 && ss -ltn | grep -qE '[:.]7331[[:space:]]'; then
-  fail "port 7331 is already in use. Stop the manually started uvicorn (Ctrl+C) and run this installer again."
+if command -v ss >/dev/null 2>&1; then
+  if ss -ltn | grep -qE "[:.]${MOBILE_PORT}[[:space:]]"; then
+    fail "port ${MOBILE_PORT} is already in use. Stop the manually started uvicorn (Ctrl+C) and run this installer again."
+  fi
+  if ss -ltn | grep -qE "[:.]${DESKTOP_PORT}[[:space:]]"; then
+    fail "port ${DESKTOP_PORT} is already in use. Stop the process using it and run this installer again."
+  fi
 fi
 
-SSL_ARGS=""
-DESKTOP_URL="http://127.0.0.1:7331"
+MOBILE_SSL_ARGS=""
+MOBILE_SCHEME="http"
 if [[ -f "$CERT" && -f "$KEY" ]]; then
-  SSL_ARGS=" --ssl-certfile $CERT --ssl-keyfile $KEY"
-  DESKTOP_URL="https://127.0.0.1:7331"
-  say "HTTPS certificate found; desktop + mobile backend will use HTTPS."
+  MOBILE_SSL_ARGS=" --ssl-certfile $CERT --ssl-keyfile $KEY"
+  MOBILE_SCHEME="https"
+  say "HTTPS certificate found; phone/LAN backend will use HTTPS on port ${MOBILE_PORT}."
 else
-  say "No local HTTPS certificate found; desktop will use HTTP. The mobile page still works, but browser microphone access over Wi-Fi needs HTTPS."
+  say "No local HTTPS certificate found; phone/LAN backend will use HTTP. Browser microphone access over Wi-Fi requires HTTPS."
 fi
+
+say "Desktop app will use loopback-only HTTP on 127.0.0.1:${DESKTOP_PORT}."
+say "This avoids WebKit TLS/certificate blank-window issues without changing the UI."
 
 say "Preparing native app icon..."
 mkdir -p "$TAURI_ICON_DIR"
@@ -56,22 +69,36 @@ install -m 0755 "$BINARY_SOURCE" "$BINARY_DEST"
 install -m 0644 "$SOURCE_ICON" "$ICON_DIR/murn.svg"
 printf '%s\n' "$DESKTOP_URL" > "$URL_FILE"
 
-cat > "$SERVICE_FILE" <<EOF
+cat > "$MOBILE_SERVICE_FILE" <<EOF
 [Unit]
-Description=murn. local AI backend
+Description=murn. LAN/mobile AI backend
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=$ROOT
-ExecStart=$UVICORN murn.main:app --host 0.0.0.0 --port 7331$SSL_ARGS
+ExecStart=$UVICORN murn.main:app --host 0.0.0.0 --port $MOBILE_PORT$MOBILE_SSL_ARGS
 Restart=on-failure
 RestartSec=2
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=default.target
+EOF
+
+cat > "$DESKTOP_SERVICE_FILE" <<EOF
+[Unit]
+Description=murn. desktop loopback backend
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$ROOT
+ExecStart=$UVICORN murn.main:app --host 127.0.0.1 --port $DESKTOP_PORT
+Restart=on-failure
+RestartSec=1
+Environment=PYTHONUNBUFFERED=1
 EOF
 
 cat > "$DESKTOP_DIR/murn.desktop" <<EOF
@@ -89,6 +116,7 @@ EOF
 
 systemctl --user daemon-reload
 systemctl --user enable --now murn.service
+systemctl --user start murn-desktop-backend.service
 
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
@@ -98,16 +126,16 @@ LAN_IP=""
 if command -v ip >/dev/null 2>&1; then
   LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')"
 fi
-SCHEME="${DESKTOP_URL%%:*}"
 
 say "Installed."
 printf 'Desktop app: %s\n' "$BINARY_DEST"
-printf 'Backend service: %s\n' "$SERVICE_FILE"
-printf 'Desktop URL: %s\n' "$DESKTOP_URL"
+printf 'Desktop backend: http://127.0.0.1:%s\n' "$DESKTOP_PORT"
+printf 'Phone/LAN backend service: %s\n' "$MOBILE_SERVICE_FILE"
+printf 'Desktop backend service: %s\n' "$DESKTOP_SERVICE_FILE"
 printf '\nOpen your application launcher and search for: murn.\n'
 printf 'Or start it now with: murn-desktop\n'
 if [[ -n "$LAN_IP" ]]; then
-  printf '\nPhone UI remains available at: %s://%s:7331/mobile\n' "$SCHEME" "$LAN_IP"
+  printf '\nPhone UI remains available at: %s://%s:%s/mobile\n' "$MOBILE_SCHEME" "$LAN_IP" "$MOBILE_PORT"
 else
-  printf '\nPhone UI remains available at: /mobile on this PC LAN address.\n'
+  printf '\nPhone UI remains available at /mobile on this PC LAN address.\n'
 fi
