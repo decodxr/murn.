@@ -30,6 +30,7 @@ TAURI_ICON_DIR="$ROOT/desktop-app/src-tauri/icons"
 TAURI_ICON="$TAURI_ICON_DIR/icon.png"
 SOURCE_ICON="$ROOT/desktop-app/murn.svg"
 COMFY_DIR="${MURN_COMFYUI_DIR:-$HOME/AI/ComfyUI}"
+COMFY_VRAM_ARGS="${MURN_COMFYUI_ARGS:---lowvram --reserve-vram 0.5}"
 DESKTOP_PORT=7332
 MOBILE_PORT=7331
 COMFY_PORT=8188
@@ -84,6 +85,7 @@ if [[ -f "$COMFY_DIR/main.py" ]]; then
   if [[ -n "$COMFY_PYTHON" ]]; then
     COMFY_AVAILABLE=1
     say "ComfyUI found at $COMFY_DIR. It will start automatically with murn."
+    say "ComfyUI VRAM profile: $COMFY_VRAM_ARGS"
   else
     warn "ComfyUI was found, but no Python interpreter was detected. Auto-start will not be installed."
   fi
@@ -141,6 +143,7 @@ set -euo pipefail
 COMFY_DIR="$COMFY_DIR"
 COMFY_PYTHON="$COMFY_PYTHON"
 COMFY_URL="http://127.0.0.1:$COMFY_PORT"
+COMFY_VRAM_ARGS="$COMFY_VRAM_ARGS"
 
 # If the user already started ComfyUI manually, keep the service alive without
 # fighting for the same port. As soon as that manual process exits, systemd's
@@ -154,7 +157,8 @@ if curl -fsS "\$COMFY_URL/queue" >/dev/null 2>&1; then
 fi
 
 cd "\$COMFY_DIR"
-exec "\$COMFY_PYTHON" main.py --listen 127.0.0.1 --port $COMFY_PORT
+read -r -a COMFY_ARGV <<< "\$COMFY_VRAM_ARGS"
+exec "\$COMFY_PYTHON" main.py --listen 127.0.0.1 --port $COMFY_PORT "\${COMFY_ARGV[@]}"
 EOF
   chmod 0755 "$COMFY_LAUNCHER"
 
@@ -170,6 +174,7 @@ ExecStart=$COMFY_LAUNCHER
 Restart=on-failure
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 [Install]
 WantedBy=default.target
@@ -253,6 +258,7 @@ printf 'Desktop backend service: %s\n' "$DESKTOP_SERVICE_FILE"
 if [[ "$COMFY_AVAILABLE" -eq 1 ]]; then
   printf 'Image backend service: %s\n' "$COMFY_SERVICE_FILE"
   printf 'ComfyUI: managed automatically on http://127.0.0.1:%s\n' "$COMFY_PORT"
+  printf 'ComfyUI VRAM args: %s\n' "$COMFY_VRAM_ARGS"
 fi
 printf '\nOpen your application launcher and search for: murn.\n'
 printf 'For this current fish shell, run once: fish_add_path ~/.local/bin\n'
