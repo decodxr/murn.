@@ -85,10 +85,20 @@ if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
 fi
 
+LAN_IP=""
+if command -v ip >/dev/null 2>&1; then
+  LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')"
+fi
+SCHEME="${DESKTOP_URL%%:*}"
+
 say "Installed."
 printf 'Desktop app: %s\n' "$BINARY_DEST"
 printf 'Backend service: %s\n' "$SERVICE_FILE"
 printf 'Desktop URL: %s\n' "$DESKTOP_URL"
 printf '\nOpen your application launcher and search for: murn.\n'
 printf 'Or start it now with: murn-desktop\n'
-printf '\nPhone UI remains available at: %s/mobile\n' "${DESKTOP_URL/127.0.0.1/192.168.0.139}"
+if [[ -n "$LAN_IP" ]]; then
+  printf '\nPhone UI remains available at: %s://%s:7331/mobile\n' "$SCHEME" "$LAN_IP"
+else
+  printf '\nPhone UI remains available at: /mobile on this PC LAN address.\n'
+fi
