@@ -63,6 +63,15 @@ class Agent:
         safe["display"] = "Rendered inline by the murn. client. Do not output a URL."
         return safe
 
+    async def _execute_tool(self, name: str, arguments: Any) -> dict[str, Any]:
+        # Ollama and ComfyUI share the same NVIDIA GPU. On an 8 GB card the
+        # resident LLM can consume almost all VRAM and make CLIP/image loading
+        # fail before sampling even begins. Release it before each image job.
+        # The next chat request makes Ollama load the model again automatically.
+        if name == "generate_image":
+            await self.llm.unload()
+        return await self.tools.execute(name, arguments)
+
     async def run(self, message: str, history: list[dict[str, str]] | None = None) -> str:
         messages = self._messages(message, history)
 
@@ -79,7 +88,7 @@ class Agent:
                 name = function.get("name", "")
                 arguments = function.get("arguments", {})
                 try:
-                    result = await self.tools.execute(name, arguments)
+                    result = await self._execute_tool(name, arguments)
                 except Exception as exc:  # Tool failures are fed back to the model, not hidden.
                     result = {"ok": False, "error": str(exc)}
 
@@ -142,7 +151,7 @@ class Agent:
                 yield {"type": "tool_start", "name": name, "arguments": arguments}
 
                 try:
-                    result = await self.tools.execute(name, arguments)
+                    result = await self._execute_tool(name, arguments)
                 except Exception as exc:
                     result = {"ok": False, "error": str(exc)}
 
