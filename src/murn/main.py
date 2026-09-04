@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from murn.agent import Agent
 from murn.config import settings
@@ -22,7 +23,10 @@ from murn.schemas import (
 from murn.sessions import SessionStore
 from murn.tools.registry import ToolRegistry
 
-app = FastAPI(title="murn.", version="0.4.0")
+UI_DIR = Path(__file__).parent / "ui"
+
+app = FastAPI(title="murn.", version="0.5.0")
+app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 llm = OllamaProvider(settings.ollama_url, settings.ollama_model)
 embedding_provider = OllamaEmbeddingProvider(settings.ollama_url, settings.embedding_model)
@@ -95,6 +99,17 @@ async def _read_audio_upload(file: UploadFile) -> tuple[bytes, str]:
     return audio, suffix
 
 
+@app.get("/", include_in_schema=False)
+async def desktop_ui():
+    return FileResponse(UI_DIR / "desktop" / "index.html")
+
+
+@app.get("/mobile", include_in_schema=False)
+@app.get("/mobile/", include_in_schema=False)
+async def mobile_ui():
+    return FileResponse(UI_DIR / "mobile" / "index.html")
+
+
 @app.get("/health")
 async def health() -> dict[str, object]:
     return {
@@ -112,6 +127,7 @@ async def health() -> dict[str, object]:
         "obsidian_vault": str(settings.obsidian_vault),
         "session_db": str(settings.session_db),
         "semantic_db": str(settings.semantic_db),
+        "ui": True,
     }
 
 
@@ -274,5 +290,41 @@ async def voice_chat(
         "message": response.message,
         "model": response.model,
         "session_id": response.session_id,
+        "audio_url": f"/v1/audio/files/{output_path.name}",
+    }
+
+
+@app.post("/v1/voice/remote")
+async def voice_remote(
+    file: UploadFile = File(...),
+    language: str | None = Form(default=None),
+):
+    """Voice-only phone companion. It intentionally does not create a saved chat session."""
+    if not stt.configured:
+        raise HTTPException(status_code=503, detail="Speech-to-text is not configured.")
+    if not tts.configured:
+        raise HTTPException(status_code=503, detail="Text-to-speech is not configured.")
+
+    audio, suffix = await _read_audio_upload(file)
+    try:
+        transcription = await stt.transcribe(audio, suffix=suffix, language=language)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"STT failed: {exc}") from exc
+
+    try:
+        answer = await agent.run(transcription["text"])
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Agent failed: {exc}") from exc
+
+    try:
+        output_path = await tts.synthesize(answer)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"TTS failed: {exc}") from exc
+
+    return {
+        "transcript": transcription["text"],
+        "message": answer,
+        "model": settings.ollama_model,
+        "ephemeral": True,
         "audio_url": f"/v1/audio/files/{output_path.name}",
     }
