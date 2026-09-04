@@ -52,22 +52,59 @@ Then set `MURN_OLLAMA_MODEL=llama3.2:3b` in `.env`.
 
 ### 2. Install ComfyUI
 
-One easy option is `comfy-cli`:
+> On Arch Linux, do not install Python packages globally with `pip --break-system-packages`. Use a virtual environment. The `python-xyz` text shown by pacman/PEP 668 is only an example placeholder, not a real package name.
 
-```bash
-python -m pip install comfy-cli
-comfy install
-```
-
-Or install manually:
+Manual install:
 
 ```bash
 git clone https://github.com/Comfy-Org/ComfyUI.git ~/AI/ComfyUI
 cd ~/AI/ComfyUI
 python -m venv .venv
+```
+
+Activate the venv for your shell:
+
+**fish:**
+
+```fish
+source .venv/bin/activate.fish
+```
+
+**bash/zsh:**
+
+```bash
 source .venv/bin/activate
-pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu130
-pip install -r requirements.txt
+```
+
+Then install dependencies from inside the venv:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+python -m pip install -r requirements.txt
+```
+
+You can verify that the venv is active with:
+
+```bash
+which python
+python -m pip --version
+```
+
+Both paths should point somewhere inside `~/AI/ComfyUI/.venv/`.
+
+If shell activation ever fails, you can bypass activation entirely and use the venv Python directly:
+
+```bash
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python main.py --listen 127.0.0.1 --port 8188
+```
+
+Start ComfyUI normally after activation:
+
+```bash
 python main.py --listen 127.0.0.1 --port 8188
 ```
 
@@ -87,8 +124,24 @@ Then configure the node IDs in `.env`. See `workflows/README.md`.
 git clone https://github.com/decodxr/murn..git
 cd murn.
 python -m venv .venv
+```
+
+Activate it using the correct script for your shell:
+
+```fish
+# fish
+source .venv/bin/activate.fish
+```
+
+```bash
+# bash/zsh
 source .venv/bin/activate
-pip install -e .
+```
+
+Then:
+
+```bash
+python -m pip install -e .
 cp .env.example .env
 ```
 
