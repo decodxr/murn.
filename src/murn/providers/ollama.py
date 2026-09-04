@@ -18,6 +18,19 @@ class OllamaProvider:
         except httpx.HTTPError:
             return False
 
+    async def unload(self) -> bool:
+        """Ask Ollama to unload the active model and release its GPU memory."""
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{self.base_url}/api/generate",
+                    json={"model": self.model, "keep_alive": 0},
+                )
+                response.raise_for_status()
+            return True
+        except httpx.HTTPError:
+            return False
+
     async def chat(
         self,
         messages: list[dict[str, Any]],
