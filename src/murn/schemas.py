@@ -10,12 +10,18 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
+    session_id: str | None = None
     history: list[Message] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
     message: str
     model: str
+    session_id: str
+
+
+class SessionCreateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
 
 
 class ImageGenerateRequest(BaseModel):
