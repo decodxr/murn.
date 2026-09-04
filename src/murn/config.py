@@ -25,8 +25,15 @@ class Settings(BaseSettings):
     comfy_seed_node: str = ""
     comfy_latent_node: str = ""
 
+    data_dir: Path = Path(".murn")
+    session_db_name: str = "sessions.db"
+
     orbital_url: str | None = None
     agent_max_steps: int = 8
+
+    @property
+    def session_db(self) -> Path:
+        return self.data_dir.expanduser() / self.session_db_name
 
 
 settings = Settings()
