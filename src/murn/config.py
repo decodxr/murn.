@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "llama3.1:8b"
+    embedding_model: str = "embeddinggemma"
 
     obsidian_vault: Path = Path("~/Documents/Obsidian").expanduser()
     obsidian_memory_dir: str = "murn"
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path(".murn")
     session_db_name: str = "sessions.db"
+    semantic_db_name: str = "memory_embeddings.db"
 
     orbital_url: str | None = None
     agent_max_steps: int = 8
@@ -34,6 +36,10 @@ class Settings(BaseSettings):
     @property
     def session_db(self) -> Path:
         return self.data_dir.expanduser() / self.session_db_name
+
+    @property
+    def semantic_db(self) -> Path:
+        return self.data_dir.expanduser() / self.semantic_db_name
 
 
 settings = Settings()
