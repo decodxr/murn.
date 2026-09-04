@@ -33,15 +33,34 @@ fn configured_url() -> String {
     format!("http://127.0.0.1:{DESKTOP_BACKEND_PORT}")
 }
 
+fn apply_linux_webkit_workarounds() {
+    #[cfg(target_os = "linux")]
+    {
+        // WebKitGTK can crash immediately on Wayland + NVIDIA when its DMABUF
+        // renderer negotiates an unsupported buffer format. These are the
+        // upstream Tauri-recommended workarounds for that exact Linux case.
+        if env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none() {
+            env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        }
+        if env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+
+        // Optional emergency fallback. The normal launcher does not enable it
+        // because it disables accelerated compositing. Run with
+        // MURN_WEBKIT_SAFE_MODE=1 only if the normal NVIDIA workaround still
+        // crashes on a specific WebKit/driver combination.
+        if env::var("MURN_WEBKIT_SAFE_MODE").ok().as_deref() == Some("1") {
+            env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
+    }
+}
+
 fn start_backend_services() {
-    // murn.service keeps the LAN/mobile endpoint alive (HTTPS when configured).
     let _ = Command::new("systemctl")
         .args(["--user", "start", "murn.service"])
         .status();
 
-    // The desktop webview deliberately uses a loopback-only HTTP endpoint.
-    // WebKit can reject a locally generated TLS certificate even when the
-    // browser/phone trusts the same CA, which results in a blank native window.
     let _ = Command::new("systemctl")
         .args(["--user", "start", "murn-desktop-backend.service"])
         .status();
@@ -52,7 +71,7 @@ fn desktop_backend_ready() -> bool {
         .parse()
         .expect("valid murn desktop address");
 
-    for _ in 0..40 {
+    for _ in 0..50 {
         if TcpStream::connect_timeout(&address, Duration::from_millis(180)).is_ok() {
             return true;
         }
@@ -62,6 +81,9 @@ fn desktop_backend_ready() -> bool {
 }
 
 fn main() {
+    // This must happen before GTK/WebKit is initialized.
+    apply_linux_webkit_workarounds();
+
     tauri::Builder::default()
         .setup(|app| {
             start_backend_services();
