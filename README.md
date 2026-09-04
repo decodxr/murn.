@@ -1,6 +1,6 @@
 # murn.
 
-**murn.** is a local-first personal AI agent with memory, tools, saved conversations, streaming, image generation, local voice, a desktop interface, and a voice-only phone companion.
+**murn.** is a local-first personal AI agent with memory, tools, saved conversations, streaming, image generation, local voice, a native desktop app, and a voice-only phone companion.
 
 Current stack:
 
@@ -12,19 +12,28 @@ Current stack:
 - **whisper.cpp** — local speech-to-text
 - **Piper** — local text-to-speech
 - **FastAPI** — local API + UI server
+- **Tauri** — native Linux desktop shell around the exact same murn. UI
 - **Orbital** — optional browser bridge scaffold
 
-## v0.5 UI
+## UI
 
-murn. now ships the black / white / violet interface directly from the backend — no Node build step and no cloud frontend.
+murn. ships the black / white / violet interface directly from the backend.
 
 ```text
-Desktop UI   http://127.0.0.1:7331/
-Phone UI     http://127.0.0.1:7331/mobile
-API docs     http://127.0.0.1:7331/docs
+Desktop web   http://127.0.0.1:7331/
+Phone UI      http://127.0.0.1:7331/mobile
+API docs      http://127.0.0.1:7331/docs
 ```
 
-### Desktop
+### Native desktop app
+
+The PC version can now be installed as a native Tauri application. It does **not** duplicate or redesign the frontend: the native window opens the exact same desktop UI served by FastAPI.
+
+The installer also creates a `systemd --user` backend service, so opening `murn.` from the KDE launcher starts the local backend automatically when needed. The phone companion remains a normal browser page at `/mobile`.
+
+Full Arch Linux installation guide: [`docs/desktop-app.md`](docs/desktop-app.md).
+
+### Desktop interface
 
 The desktop interface includes:
 
@@ -61,16 +70,16 @@ SPEAKING
 
 It supports hold-to-talk and hands-free auto listening with local voice activity detection.
 
-Full desktop + phone + LAN + HTTPS setup: [`docs/ui.md`](docs/ui.md).
+Full desktop-web + phone + LAN + HTTPS setup: [`docs/ui.md`](docs/ui.md).
 
 ## Architecture
 
 ```text
                          murn. PC
 
- desktop UI  ───────┐
-                    |
-                    v
+ Tauri app ────────┐
+ desktop web ──────┤
+                   v
                 FastAPI
               /    |     \
          sessions agent   voice
@@ -116,7 +125,7 @@ ollama pull embeddinggemma
 
 Configure your Obsidian vault, ComfyUI workflow, whisper.cpp model, and Piper voice in `.env`.
 
-Start murn.:
+Start murn. manually for development:
 
 ```bash
 uvicorn murn.main:app --reload --host 127.0.0.1 --port 7331
@@ -127,6 +136,8 @@ Then open:
 ```text
 http://127.0.0.1:7331
 ```
+
+For the native desktop application instead, see [`docs/desktop-app.md`](docs/desktop-app.md).
 
 ## Health
 
@@ -231,5 +242,4 @@ The phone companion is intended for a trusted local network. The development ser
 - interrupt / barge-in while murn. is speaking
 - Orbital native AI bridge
 - vision model support
-- optional Tauri desktop wrapper around the current UI
 - controlled filesystem and terminal tools
