@@ -18,7 +18,14 @@ class ObsidianMemory:
             return []
 
         results: list[dict[str, str | int]] = []
-        for path in self.root.rglob("*.md"):
+        if not self.vault.exists():
+            return results
+
+        for path in self.vault.rglob("*.md"):
+            relative = path.relative_to(self.vault)
+            if any(part.startswith(".") for part in relative.parts):
+                continue
+
             try:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
@@ -35,7 +42,7 @@ class ObsidianMemory:
             excerpt = text[start:end].strip()
             results.append(
                 {
-                    "path": str(path.relative_to(self.vault)),
+                    "path": str(relative),
                     "score": score,
                     "excerpt": excerpt,
                 }
