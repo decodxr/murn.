@@ -1,60 +1,54 @@
 # murn.
 
-**murn.** is a local-first AI agent with memory, tools, web/browser integration, and image generation.
+**murn.** is a local-first AI agent with memory, tools, persistent conversations, streaming, browser integration, and image generation.
 
-This repository is the core backend for murn. The first version uses:
+Current stack:
 
-- **Ollama** for local text models (default: `llama3.1:8b`)
+- **Ollama** for local language models (default: `llama3.1:8b`)
 - **ComfyUI** for local image generation
-- **Obsidian** as persistent Markdown memory
-- **FastAPI** as the local agent API
+- **Obsidian** for durable Markdown memory
+- **SQLite** for local conversation sessions/history
+- **FastAPI** for the local agent API
 - **Orbital** as an optional browser provider (adapter scaffold included)
 
 ## Architecture
 
 ```text
 client / future UI
-      |
-      v
- FastAPI API
-      |
-      v
-  murn agent
-   /   |    \
-Ollama Obsidian ComfyUI
-  |       |      |
-Llama   memory  images
-      \
-       Orbital (optional browser)
+        |
+        v
+    FastAPI API
+        |
+        v
+      murn.
+   /    |      \
+Ollama SQLite  tools
+  |      |     /   \
+Llama sessions Obsidian ComfyUI
+                         |
+                       images
+
+Orbital -> optional browser bridge
 ```
 
 ## Quick start
 
-### 1. Install Ollama
-
-Linux:
+### 1. Ollama
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.1:8b
-ollama run llama3.1:8b
 ```
 
-Ollama exposes its local API on `http://127.0.0.1:11434`.
+Ollama API:
 
-For a lighter model, especially if ComfyUI is using the GPU at the same time:
-
-```bash
-ollama pull llama3.2:3b
+```text
+http://127.0.0.1:11434
 ```
 
-Then set `MURN_OLLAMA_MODEL=llama3.2:3b` in `.env`.
+### 2. ComfyUI on Arch Linux
 
-### 2. Install ComfyUI
-
-> On Arch Linux, do not install Python packages globally with `pip --break-system-packages`. Use a virtual environment. The `python-xyz` text shown by pacman/PEP 668 is only an example placeholder, not a real package name.
-
-Manual install:
+Do not install Python packages globally with `pip --break-system-packages`. Use a virtual environment.
 
 ```bash
 git clone https://github.com/Comfy-Org/ComfyUI.git ~/AI/ComfyUI
@@ -62,21 +56,19 @@ cd ~/AI/ComfyUI
 python -m venv .venv
 ```
 
-Activate the venv for your shell:
-
-**fish:**
+fish:
 
 ```fish
 source .venv/bin/activate.fish
 ```
 
-**bash/zsh:**
+bash/zsh:
 
 ```bash
 source .venv/bin/activate
 ```
 
-Then install dependencies from inside the venv:
+Install dependencies:
 
 ```bash
 python -m pip install --upgrade pip
@@ -84,58 +76,32 @@ python -m pip install torch torchvision torchaudio --index-url https://download.
 python -m pip install -r requirements.txt
 ```
 
-You can verify that the venv is active with:
-
-```bash
-which python
-python -m pip --version
-```
-
-Both paths should point somewhere inside `~/AI/ComfyUI/.venv/`.
-
-If shell activation ever fails, you can bypass activation entirely and use the venv Python directly:
-
-```bash
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python main.py --listen 127.0.0.1 --port 8188
-```
-
-Start ComfyUI normally after activation:
+Start ComfyUI:
 
 ```bash
 python main.py --listen 127.0.0.1 --port 8188
 ```
 
-Place your image models in the folders expected by your ComfyUI workflow.
-
-To let murn. generate images, build a working txt2img workflow in ComfyUI and export it in **API format**. Save the exported file as:
+Export a working txt2img workflow in **API format** and save it as:
 
 ```text
 workflows/txt2img_api.json
 ```
 
-Then configure the node IDs in `.env`. See `workflows/README.md`.
+Then configure the workflow node IDs in `.env`. See `workflows/README.md`.
 
-### 3. Set up murn.
+### 3. murn.
 
 ```bash
-git clone https://github.com/decodxr/murn..git
-cd murn.
+git clone https://github.com/decodxr/murn..git ~/Projects/murn
+cd ~/Projects/murn
 python -m venv .venv
 ```
 
-Activate it using the correct script for your shell:
+fish:
 
 ```fish
-# fish
 source .venv/bin/activate.fish
-```
-
-```bash
-# bash/zsh
-source .venv/bin/activate
 ```
 
 Then:
@@ -145,39 +111,106 @@ python -m pip install -e .
 cp .env.example .env
 ```
 
-Edit `.env` and set your Obsidian vault path:
+Configure `.env`, for example:
 
 ```env
-MURN_OBSIDIAN_VAULT=/home/you/Documents/Obsidian/MyVault
+MURN_OLLAMA_URL=http://127.0.0.1:11434
+MURN_OLLAMA_MODEL=llama3.1:8b
+
+MURN_OBSIDIAN_VAULT=/home/you/Documents/Obsidian/Murn
+MURN_OBSIDIAN_MEMORY_DIR=murn
+
+MURN_COMFYUI_URL=http://127.0.0.1:8188
+MURN_COMFY_WORKFLOW_PATH=workflows/txt2img_api.json
+MURN_COMFY_POSITIVE_NODE=67
+MURN_COMFY_NEGATIVE_NODE=71
+MURN_COMFY_SEED_NODE=70
+MURN_COMFY_LATENT_NODE=68
+
+MURN_DATA_DIR=.murn
+MURN_SESSION_DB_NAME=sessions.db
 ```
 
-Start the backend:
+Start murn.:
 
 ```bash
 uvicorn murn.main:app --reload --host 127.0.0.1 --port 7331
 ```
 
-Open:
+API docs:
 
 ```text
 http://127.0.0.1:7331/docs
 ```
 
-### 4. Test it
-
-Health:
+## Health
 
 ```bash
 curl http://127.0.0.1:7331/health
 ```
 
-Chat:
+## Persistent chat sessions
+
+A chat request without a `session_id` automatically creates a session:
 
 ```bash
 curl -X POST http://127.0.0.1:7331/v1/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"Remember that the murn. browser integration is called Orbital."}'
+  -d '{"message":"My browser project is called Orbital."}'
 ```
+
+The response contains a `session_id`. Reuse it on later messages:
+
+```bash
+curl -X POST http://127.0.0.1:7331/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"PASTE_SESSION_ID_HERE","message":"What is my browser project called?"}'
+```
+
+List sessions:
+
+```bash
+curl http://127.0.0.1:7331/v1/sessions
+```
+
+Read one session:
+
+```bash
+curl http://127.0.0.1:7331/v1/sessions/PASTE_SESSION_ID_HERE
+```
+
+Session data is stored locally in:
+
+```text
+.murn/sessions.db
+```
+
+This is separate from Obsidian memory: SQLite stores the conversation history, while Obsidian stores durable long-term memories.
+
+## Streaming chat
+
+`/v1/chat/stream` returns newline-delimited JSON events as the model responds:
+
+```bash
+curl -N -X POST http://127.0.0.1:7331/v1/chat/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Explain what murn. can currently do."}'
+```
+
+Event types include:
+
+```text
+session
+ token
+ tool_start
+ tool_result
+ done
+ error
+```
+
+The tool events are useful for a future UI to show things like image-generation progress without waiting for the final model response.
+
+## Obsidian memory
 
 Search memory:
 
@@ -185,7 +218,13 @@ Search memory:
 curl 'http://127.0.0.1:7331/v1/memory/search?q=Orbital'
 ```
 
-Generate an image after configuring a ComfyUI API workflow:
+murn.-generated memories live under:
+
+```text
+<your vault>/murn/memory/
+```
+
+## Image generation
 
 ```bash
 curl -X POST http://127.0.0.1:7331/v1/images/generate \
@@ -193,16 +232,24 @@ curl -X POST http://127.0.0.1:7331/v1/images/generate \
   -d '{"prompt":"a quiet rainy street at night, documentary photography"}'
 ```
 
-## Current scope
+Or ask the agent directly:
 
-The initial core intentionally does **not** give the model arbitrary shell access. Tools are registered explicitly. That keeps the agent understandable and gives us a safe place to add filesystem, Orbital, code execution, vision, and other capabilities later.
+```bash
+curl -X POST http://127.0.0.1:7331/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Generate an image of an abandoned gas station at night."}'
+```
 
-## Next pieces
+## Current safety model
 
-- semantic memory / embeddings over the Obsidian vault
-- conversation sessions
-- streaming responses
+murn. does not give the language model arbitrary shell access. Capabilities are exposed as explicit tools. Filesystem, terminal, Orbital, voice, and other integrations can therefore be added with their own permissions instead of handing the model unrestricted system access.
+
+## Roadmap
+
+- semantic Obsidian memory / embeddings
+- speech-to-text (local Whisper-compatible backend)
+- text-to-speech
 - Orbital native AI bridge
 - vision model support
-- local speech input/output
-- desktop UI
+- desktop/chat UI
+- controlled filesystem and terminal tools
