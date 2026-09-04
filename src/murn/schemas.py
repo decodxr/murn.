@@ -30,3 +30,7 @@ class ImageGenerateRequest(BaseModel):
     width: int | None = Field(default=None, ge=64, le=4096)
     height: int | None = Field(default=None, ge=64, le=4096)
     seed: int | None = None
+
+
+class SpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=12000)
