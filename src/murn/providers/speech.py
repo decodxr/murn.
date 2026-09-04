@@ -85,8 +85,10 @@ class WhisperCppProvider:
         job_id = uuid.uuid4().hex
 
         clean_suffix = suffix.lower() if suffix and len(suffix) <= 12 else ".audio"
-        source_path = work_dir / f"{job_id}{clean_suffix}"
-        wav_path = work_dir / f"{job_id}.wav"
+        # Keep the uploaded source and ffmpeg-normalized WAV as distinct files even
+        # when the upload itself is already a .wav file.
+        source_path = work_dir / f"{job_id}-source{clean_suffix}"
+        wav_path = work_dir / f"{job_id}-16k.wav"
         output_prefix = work_dir / f"{job_id}-transcript"
         transcript_path = Path(f"{output_prefix}.txt")
         source_path.write_bytes(audio)
