@@ -6,7 +6,13 @@ VENV="${MURN_VENV:-$ROOT/.venv}"
 UVICORN="$VENV/bin/uvicorn"
 CARGO_MANIFEST="$ROOT/desktop-app/src-tauri/Cargo.toml"
 BINARY_SOURCE="$ROOT/desktop-app/src-tauri/target/release/murn-desktop"
-BINARY_DEST="$HOME/.local/bin/murn-desktop"
+APP_LIB_DIR="$HOME/.local/lib/murn"
+BINARY_DEST="$APP_LIB_DIR/murn-desktop-bin"
+LAUNCHER_DIR="$HOME/.local/bin"
+LAUNCHER_DEST="$LAUNCHER_DIR/murn-desktop"
+SAFE_LAUNCHER_DEST="$LAUNCHER_DIR/murn-desktop-safe"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/murn"
+LOG_FILE="$STATE_DIR/desktop.log"
 SERVICE_DIR="$HOME/.config/systemd/user"
 MOBILE_SERVICE_FILE="$SERVICE_DIR/murn.service"
 DESKTOP_SERVICE_FILE="$SERVICE_DIR/murn-desktop-backend.service"
@@ -14,6 +20,8 @@ CONFIG_DIR="$HOME/.config/murn"
 URL_FILE="$CONFIG_DIR/desktop-url"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 DESKTOP_DIR="$HOME/.local/share/applications"
+FISH_CONF_DIR="$HOME/.config/fish/conf.d"
+FISH_PATH_FILE="$FISH_CONF_DIR/murn-path.fish"
 CERT="$HOME/.local/share/murn/certs/murn.pem"
 KEY="$HOME/.local/share/murn/certs/murn-key.pem"
 TAURI_ICON_DIR="$ROOT/desktop-app/src-tauri/icons"
@@ -54,7 +62,7 @@ else
 fi
 
 say "Desktop app will use loopback-only HTTP on 127.0.0.1:${DESKTOP_PORT}."
-say "This avoids WebKit TLS/certificate blank-window issues without changing the UI."
+say "Applying Linux/NVIDIA-safe WebKit launcher defaults without changing the UI."
 
 say "Preparing native app icon..."
 mkdir -p "$TAURI_ICON_DIR"
@@ -64,10 +72,37 @@ rsvg-convert -w 512 -h 512 "$SOURCE_ICON" -o "$TAURI_ICON"
 say "Building native Tauri shell..."
 cargo build --release --manifest-path "$CARGO_MANIFEST"
 
-mkdir -p "$(dirname "$BINARY_DEST")" "$SERVICE_DIR" "$CONFIG_DIR" "$ICON_DIR" "$DESKTOP_DIR"
+mkdir -p "$APP_LIB_DIR" "$LAUNCHER_DIR" "$STATE_DIR" "$SERVICE_DIR" "$CONFIG_DIR" "$ICON_DIR" "$DESKTOP_DIR" "$FISH_CONF_DIR"
 install -m 0755 "$BINARY_SOURCE" "$BINARY_DEST"
 install -m 0644 "$SOURCE_ICON" "$ICON_DIR/murn.svg"
 printf '%s\n' "$DESKTOP_URL" > "$URL_FILE"
+
+cat > "$LAUNCHER_DEST" <<EOF
+#!/usr/bin/env bash
+set -u
+STATE_DIR="\${XDG_STATE_HOME:-\$HOME/.local/state}/murn"
+mkdir -p "\$STATE_DIR"
+LOG_FILE="\$STATE_DIR/desktop.log"
+export __NV_DISABLE_EXPLICIT_SYNC="\${__NV_DISABLE_EXPLICIT_SYNC:-1}"
+export WEBKIT_DISABLE_DMABUF_RENDERER="\${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
+printf '\n===== murn. desktop start %s =====\n' "\$(date --iso-8601=seconds 2>/dev/null || date)" >> "\$LOG_FILE"
+exec "$BINARY_DEST" >> "\$LOG_FILE" 2>&1
+EOF
+chmod 0755 "$LAUNCHER_DEST"
+
+cat > "$SAFE_LAUNCHER_DEST" <<EOF
+#!/usr/bin/env bash
+export MURN_WEBKIT_SAFE_MODE=1
+exec "$LAUNCHER_DEST" "\$@"
+EOF
+chmod 0755 "$SAFE_LAUNCHER_DEST"
+
+cat > "$FISH_PATH_FILE" <<'EOF'
+# murn. desktop command
+if type -q fish_add_path
+    fish_add_path --path "$HOME/.local/bin"
+end
+EOF
 
 cat > "$MOBILE_SERVICE_FILE" <<EOF
 [Unit]
@@ -106,7 +141,7 @@ cat > "$DESKTOP_DIR/murn.desktop" <<EOF
 Type=Application
 Name=murn.
 Comment=Local-first AI assistant
-Exec=$BINARY_DEST
+Exec=$LAUNCHER_DEST
 Icon=murn
 Terminal=false
 Categories=Utility;Development;
@@ -128,12 +163,16 @@ if command -v ip >/dev/null 2>&1; then
 fi
 
 say "Installed."
-printf 'Desktop app: %s\n' "$BINARY_DEST"
+printf 'Desktop launcher: %s\n' "$LAUNCHER_DEST"
+printf 'Native binary: %s\n' "$BINARY_DEST"
+printf 'Desktop log: %s\n' "$LOG_FILE"
 printf 'Desktop backend: http://127.0.0.1:%s\n' "$DESKTOP_PORT"
 printf 'Phone/LAN backend service: %s\n' "$MOBILE_SERVICE_FILE"
 printf 'Desktop backend service: %s\n' "$DESKTOP_SERVICE_FILE"
 printf '\nOpen your application launcher and search for: murn.\n'
-printf 'Or start it now with: murn-desktop\n'
+printf 'For this current fish shell, run once: fish_add_path ~/.local/bin\n'
+printf 'Then start it with: murn-desktop\n'
+printf 'Emergency WebKit mode: murn-desktop-safe\n'
 if [[ -n "$LAN_IP" ]]; then
   printf '\nPhone UI remains available at: %s://%s:%s/mobile\n' "$MOBILE_SCHEME" "$LAN_IP" "$MOBILE_PORT"
 else
