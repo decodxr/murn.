@@ -22,7 +22,7 @@ Be useful, concise, and natural. You can use registered tools when they help.
 Search memory when past project context is likely relevant. Write memory only when the user explicitly
 asks you to remember something or when information is clearly durable and useful for future work.
 When image generation is available and the user asks to create an image, use the image tool.
-When generate_image succeeds, do not print or expose the raw image URL/path in the final answer.
+When generate_image succeeds, do not print or expose a raw image URL/path in the final answer.
 The murn. UI renders generated images inline automatically. Just acknowledge the result naturally.
 For other tools, include a useful local URL or output path when it genuinely helps the user.
 Never claim a tool action succeeded unless the tool result says it did.
@@ -41,6 +41,27 @@ class Agent:
         messages.extend(history or [])
         messages.append({"role": "user", "content": message})
         return messages
+
+    @staticmethod
+    def _tool_result_for_model(name: str, result: dict[str, Any]) -> dict[str, Any]:
+        if name != "generate_image" or not isinstance(result, dict):
+            return result
+
+        safe = dict(result)
+        safe_images: list[dict[str, Any]] = []
+        for image in result.get("images") or []:
+            if not isinstance(image, dict):
+                continue
+            safe_images.append(
+                {
+                    key: value
+                    for key, value in image.items()
+                    if key in {"filename", "subfolder", "type"}
+                }
+            )
+        safe["images"] = safe_images
+        safe["display"] = "Rendered inline by the murn. client. Do not output a URL."
+        return safe
 
     async def run(self, message: str, history: list[dict[str, str]] | None = None) -> str:
         messages = self._messages(message, history)
@@ -66,7 +87,10 @@ class Agent:
                     {
                         "role": "tool",
                         "tool_name": name,
-                        "content": json.dumps(result, ensure_ascii=False),
+                        "content": json.dumps(
+                            self._tool_result_for_model(name, result),
+                            ensure_ascii=False,
+                        ),
                     }
                 )
 
@@ -122,12 +146,18 @@ class Agent:
                 except Exception as exc:
                     result = {"ok": False, "error": str(exc)}
 
+                # The UI receives the complete result so it can render image assets.
                 yield {"type": "tool_result", "name": name, "result": result}
+                # The model deliberately receives no image transport URL. This prevents
+                # it from turning an inline image into a raw localhost link in chat.
                 messages.append(
                     {
                         "role": "tool",
                         "tool_name": name,
-                        "content": json.dumps(result, ensure_ascii=False),
+                        "content": json.dumps(
+                            self._tool_result_for_model(name, result),
+                            ensure_ascii=False,
+                        ),
                     }
                 )
 
