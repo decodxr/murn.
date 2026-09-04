@@ -2,12 +2,19 @@ import json
 from typing import Any
 
 from murn.memory.obsidian import ObsidianMemory
+from murn.memory.semantic import SemanticMemory
 from murn.providers.comfyui import ComfyUIProvider
 
 
 class ToolRegistry:
-    def __init__(self, memory: ObsidianMemory, images: ComfyUIProvider) -> None:
+    def __init__(
+        self,
+        memory: ObsidianMemory,
+        semantic_memory: SemanticMemory,
+        images: ComfyUIProvider,
+    ) -> None:
         self.memory = memory
+        self.semantic_memory = semantic_memory
         self.images = images
 
     def definitions(self) -> list[dict[str, Any]]:
@@ -16,7 +23,10 @@ class ToolRegistry:
                 "type": "function",
                 "function": {
                     "name": "memory_search",
-                    "description": "Search murn.'s long-term Obsidian memory for relevant context.",
+                    "description": (
+                        "Semantically search murn.'s long-term Obsidian memory for relevant context, "
+                        "even when the query does not use the same words as the notes."
+                    ),
                     "parameters": {
                         "type": "object",
                         "required": ["query"],
@@ -78,12 +88,17 @@ class ToolRegistry:
         arguments = arguments or {}
 
         if name == "memory_search":
-            return {
-                "results": self.memory.search(
-                    str(arguments["query"]),
-                    int(arguments.get("limit", 5)),
-                )
-            }
+            query = str(arguments["query"])
+            limit = int(arguments.get("limit", 5))
+            try:
+                results = await self.semantic_memory.search(query, limit)
+                return {"mode": "semantic", "results": results}
+            except Exception as exc:
+                return {
+                    "mode": "keyword-fallback",
+                    "semantic_error": str(exc),
+                    "results": self.memory.search(query, limit),
+                }
 
         if name == "memory_write":
             result = self.memory.write(
