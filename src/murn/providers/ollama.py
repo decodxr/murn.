@@ -1,3 +1,5 @@
+import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -35,3 +37,24 @@ class OllamaProvider:
             data = response.json()
 
         return data["message"]
+
+    async def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    yield json.loads(line)
