@@ -1,7 +1,8 @@
 import json
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 
 from murn.agent import Agent
 from murn.config import settings
@@ -10,11 +11,18 @@ from murn.memory.semantic import SemanticMemory
 from murn.providers.comfyui import ComfyUIProvider
 from murn.providers.embeddings import OllamaEmbeddingProvider
 from murn.providers.ollama import OllamaProvider
-from murn.schemas import ChatRequest, ChatResponse, ImageGenerateRequest, SessionCreateRequest
+from murn.providers.speech import PiperTTSProvider, WhisperCppProvider
+from murn.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ImageGenerateRequest,
+    SessionCreateRequest,
+    SpeechRequest,
+)
 from murn.sessions import SessionStore
 from murn.tools.registry import ToolRegistry
 
-app = FastAPI(title="murn.", version="0.3.0")
+app = FastAPI(title="murn.", version="0.4.0")
 
 llm = OllamaProvider(settings.ollama_url, settings.ollama_model)
 embedding_provider = OllamaEmbeddingProvider(settings.ollama_url, settings.embedding_model)
@@ -32,6 +40,15 @@ images = ComfyUIProvider(
     settings.comfy_seed_node,
     settings.comfy_latent_node,
 )
+stt = WhisperCppProvider(
+    settings.whisper_cli,
+    settings.whisper_model,
+    settings.audio_dir,
+    settings.ffmpeg_bin,
+    settings.whisper_language,
+    settings.whisper_no_gpu,
+)
+tts = PiperTTSProvider(settings.piper_model, settings.audio_dir)
 sessions = SessionStore(settings.session_db)
 tools = ToolRegistry(memory, semantic_memory, images)
 agent = Agent(llm, tools, settings.agent_max_steps)
@@ -49,6 +66,35 @@ def _session_for(request: ChatRequest) -> tuple[str, list[dict[str, str]]]:
     return created["id"], history
 
 
+async def _chat_once(request: ChatRequest) -> ChatResponse:
+    session_id, history = _session_for(request)
+    sessions.append(session_id, "user", request.message)
+
+    try:
+        answer = await agent.run(request.message, history)
+        sessions.append(session_id, "assistant", answer)
+        return ChatResponse(message=answer, model=settings.ollama_model, session_id=session_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+async def _read_audio_upload(file: UploadFile) -> tuple[bytes, str]:
+    max_bytes = settings.audio_max_mb * 1024 * 1024
+    audio = await file.read(max_bytes + 1)
+    if len(audio) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio file is larger than {settings.audio_max_mb} MB.",
+        )
+    if not audio:
+        raise HTTPException(status_code=400, detail="Audio upload is empty.")
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if not suffix or len(suffix) > 12:
+        suffix = ".audio"
+    return audio, suffix
+
+
 @app.get("/health")
 async def health() -> dict[str, object]:
     return {
@@ -59,6 +105,10 @@ async def health() -> dict[str, object]:
         "embeddings": await embedding_provider.health(),
         "comfyui": await images.health(),
         "comfyui_configured": images.configured,
+        "stt": await stt.health(),
+        "tts": await tts.health(),
+        "whisper_model": str(settings.whisper_model),
+        "piper_model": str(settings.piper_model),
         "obsidian_vault": str(settings.obsidian_vault),
         "session_db": str(settings.session_db),
         "semantic_db": str(settings.semantic_db),
@@ -92,15 +142,7 @@ async def delete_session(session_id: str):
 
 @app.post("/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
-    session_id, history = _session_for(request)
-    sessions.append(session_id, "user", request.message)
-
-    try:
-        answer = await agent.run(request.message, history)
-        sessions.append(session_id, "assistant", answer)
-        return ChatResponse(message=answer, model=settings.ollama_model, session_id=session_id)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await _chat_once(request)
 
 
 @app.post("/v1/chat/stream")
@@ -164,3 +206,73 @@ async def generate_image(request: ImageGenerateRequest):
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/audio/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    language: str | None = Form(default=None),
+):
+    if not stt.configured:
+        raise HTTPException(status_code=503, detail="Speech-to-text is not configured.")
+
+    audio, suffix = await _read_audio_upload(file)
+    try:
+        return await stt.transcribe(audio, suffix=suffix, language=language)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/v1/audio/speech")
+async def text_to_speech(request: SpeechRequest):
+    if not tts.configured:
+        raise HTTPException(status_code=503, detail="Text-to-speech is not configured.")
+
+    try:
+        output_path = await tts.synthesize(request.text)
+        return FileResponse(output_path, media_type="audio/wav", filename=output_path.name)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/v1/audio/files/{filename}")
+async def get_generated_audio(filename: str):
+    output_path = tts.get_output(filename)
+    if output_path is None:
+        raise HTTPException(status_code=404, detail="Audio file not found.")
+    return FileResponse(output_path, media_type="audio/wav", filename=output_path.name)
+
+
+@app.post("/v1/voice/chat")
+async def voice_chat(
+    file: UploadFile = File(...),
+    session_id: str | None = Form(default=None),
+    language: str | None = Form(default=None),
+):
+    if not stt.configured:
+        raise HTTPException(status_code=503, detail="Speech-to-text is not configured.")
+    if not tts.configured:
+        raise HTTPException(status_code=503, detail="Text-to-speech is not configured.")
+
+    audio, suffix = await _read_audio_upload(file)
+    try:
+        transcription = await stt.transcribe(audio, suffix=suffix, language=language)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"STT failed: {exc}") from exc
+
+    response = await _chat_once(
+        ChatRequest(message=transcription["text"], session_id=session_id)
+    )
+
+    try:
+        output_path = await tts.synthesize(response.message)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"TTS failed: {exc}") from exc
+
+    return {
+        "transcript": transcription["text"],
+        "message": response.message,
+        "model": response.model,
+        "session_id": response.session_id,
+        "audio_url": f"/v1/audio/files/{output_path.name}",
+    }
