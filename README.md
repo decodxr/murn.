@@ -5,9 +5,10 @@
 Current stack:
 
 - **Ollama** for local language models (default: `llama3.1:8b`)
+- **EmbeddingGemma via Ollama** for local semantic memory
 - **ComfyUI** for local image generation
 - **Obsidian** for durable Markdown memory
-- **SQLite** for local conversation sessions/history
+- **SQLite** for local conversation sessions/history and the semantic-memory index
 - **FastAPI** for the local agent API
 - **Orbital** as an optional browser provider (adapter scaffold included)
 
@@ -21,12 +22,13 @@ client / future UI
         |
         v
       murn.
-   /    |      \
-Ollama SQLite  tools
-  |      |     /   \
-Llama sessions Obsidian ComfyUI
-                         |
-                       images
+   /      |       \
+Ollama  SQLite    tools
+  |      /   \    /   \
+Llama sessions vectors Obsidian ComfyUI
+         ^             |       |
+         |             |     images
+   EmbeddingGemma -----+
 
 Orbital -> optional browser bridge
 ```
@@ -38,6 +40,7 @@ Orbital -> optional browser bridge
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.1:8b
+ollama pull embeddinggemma
 ```
 
 Ollama API:
@@ -116,6 +119,7 @@ Configure `.env`, for example:
 ```env
 MURN_OLLAMA_URL=http://127.0.0.1:11434
 MURN_OLLAMA_MODEL=llama3.1:8b
+MURN_EMBEDDING_MODEL=embeddinggemma
 
 MURN_OBSIDIAN_VAULT=/home/you/Documents/Obsidian/Murn
 MURN_OBSIDIAN_MEMORY_DIR=murn
@@ -129,6 +133,7 @@ MURN_COMFY_LATENT_NODE=68
 
 MURN_DATA_DIR=.murn
 MURN_SESSION_DB_NAME=sessions.db
+MURN_SEMANTIC_DB_NAME=memory_embeddings.db
 ```
 
 Start murn.:
@@ -148,6 +153,8 @@ http://127.0.0.1:7331/docs
 ```bash
 curl http://127.0.0.1:7331/health
 ```
+
+`embeddings` should be `true` after `embeddinggemma` has been pulled into Ollama.
 
 ## Persistent chat sessions
 
@@ -210,13 +217,32 @@ session
 
 The tool events are useful for a future UI to show things like image-generation progress without waiting for the final model response.
 
-## Obsidian memory
+## Semantic Obsidian memory
 
-Search memory:
+murn. embeds Markdown chunks locally with Ollama and caches the vectors in:
+
+```text
+.murn/memory_embeddings.db
+```
+
+The source of truth stays in Obsidian. The SQLite vector cache can be deleted and rebuilt at any time.
+
+Build/update the index:
 
 ```bash
-curl 'http://127.0.0.1:7331/v1/memory/search?q=Orbital'
+curl -X POST http://127.0.0.1:7331/v1/memory/reindex
 ```
+
+Semantic search:
+
+```bash
+curl --get http://127.0.0.1:7331/v1/memory/search \
+  --data-urlencode 'q=what was I doing with my browser project?'
+```
+
+The index automatically checks for changed Markdown files before each semantic search, so new or edited notes are picked up without manually rebuilding every time.
+
+If the embedding backend is unavailable, the agent's `memory_search` tool falls back to the older keyword search instead of losing memory access completely.
 
 murn.-generated memories live under:
 
@@ -246,7 +272,6 @@ murn. does not give the language model arbitrary shell access. Capabilities are 
 
 ## Roadmap
 
-- semantic Obsidian memory / embeddings
 - speech-to-text (local Whisper-compatible backend)
 - text-to-speech
 - Orbital native AI bridge
