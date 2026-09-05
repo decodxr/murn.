@@ -4,6 +4,7 @@
   const send = document.querySelector('#send-button');
   const attach = document.querySelector('.attach-button');
   const messageList = document.querySelector('#message-list');
+  const sessionGroups = document.querySelector('#session-groups');
   const toastEl = document.querySelector('#toast');
 
   if (!composer || !input || !send || !attach || !messageList) return;
@@ -13,6 +14,7 @@
     previewUrl: null,
     busy: false,
     visionModel: 'vision',
+    sessionId: '',
   };
 
   const fileInput = document.createElement('input');
@@ -55,6 +57,11 @@
     return ['image/png', 'image/jpeg', 'image/webp'].includes(file?.type || '');
   }
 
+  function syncSessionId() {
+    const active = document.querySelector('.session-item.active');
+    if (active?.dataset?.sessionId) state.sessionId = active.dataset.sessionId;
+  }
+
   function setPendingFile(file) {
     if (!file) return;
     if (!validImage(file)) {
@@ -93,7 +100,8 @@
   }
 
   function currentSessionId() {
-    return document.querySelector('.session-item.active')?.dataset?.sessionId || '';
+    syncSessionId();
+    return state.sessionId;
   }
 
   function escapeSelector(value) {
@@ -160,14 +168,23 @@
     const message = appendMessageShell('assistant');
     const card = document.createElement('div');
     card.className = 'vision-processing';
-    card.innerHTML = `
-      <span class="tool-icon">◉</span>
-      <span>
-        <span class="tool-name">analisando imagem</span>
-        <span class="vision-model">${state.visionModel} · local vision</span>
-      </span>
-      <span class="spinner"></span>
-    `;
+
+    const icon = document.createElement('span');
+    icon.className = 'tool-icon';
+    icon.textContent = '◉';
+
+    const copy = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'tool-name';
+    name.textContent = 'analisando imagem';
+    const model = document.createElement('span');
+    model.className = 'vision-model';
+    model.textContent = `${state.visionModel} · local vision`;
+    copy.append(name, model);
+
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    card.append(icon, copy, spinner);
     message.body.appendChild(card);
     return { ...message, card };
   }
@@ -228,7 +245,7 @@
     input.value = '';
     input.style.height = 'auto';
 
-    appendVisionUser(localPreviewUrl, question);
+    const userMessage = appendVisionUser(localPreviewUrl, question);
     const assistant = appendVisionAssistant();
     clearPending({ keepPreviewUrl: true });
 
@@ -256,7 +273,15 @@
       assistant.card.remove();
       assistant.content.textContent = result.message || '';
 
+      if (result.image_url) {
+        const image = userMessage.content.querySelector('.vision-message-image');
+        if (image) image.src = result.image_url;
+        if (localPreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(localPreviewUrl);
+        if (state.previewUrl === localPreviewUrl) state.previewUrl = null;
+      }
+
       if (result.session_id) {
+        state.sessionId = result.session_id;
         try {
           const sessionResponse = await fetch(`/v1/sessions/${encodeURIComponent(result.session_id)}`);
           if (sessionResponse.ok) {
@@ -338,9 +363,25 @@
     sendVision();
   }, true);
 
-  const observer = new MutationObserver(() => renderStoredVisionImages(messageList));
-  observer.observe(messageList, { childList: true, subtree: true, characterData: true });
+  const messageObserver = new MutationObserver(() => renderStoredVisionImages(messageList));
+  messageObserver.observe(messageList, { childList: true, subtree: true, characterData: true });
+
+  if (sessionGroups) {
+    const sessionObserver = new MutationObserver(syncSessionId);
+    sessionObserver.observe(sessionGroups, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    sessionGroups.addEventListener('click', (event) => {
+      const item = event.target.closest?.('.session-item');
+      if (item?.dataset?.sessionId) state.sessionId = item.dataset.sessionId;
+    }, true);
+  }
+
+  document.querySelector('#new-chat')?.addEventListener('click', () => {
+    // desktop.js creates the session asynchronously; the session observer above
+    // picks up its new active item after the sidebar rerenders.
+    state.sessionId = '';
+  }, true);
 
   renderStoredVisionImages(messageList);
+  syncSessionId();
   refreshVisionHealth();
 })();
