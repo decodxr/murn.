@@ -27,7 +27,7 @@ from murn.tools.registry import ToolRegistry
 
 UI_DIR = Path(__file__).parent / "ui"
 
-app = FastAPI(title="murn.", version="0.6.0")
+app = FastAPI(title="murn.", version="0.8.0")
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 llm = OllamaProvider(settings.ollama_url, settings.ollama_model)
@@ -155,6 +155,8 @@ async def health() -> dict[str, object]:
         "embeddings": await embedding_provider.health(),
         "comfyui": await images.health(),
         "comfyui_configured": images.configured,
+        "browser": await tools.browser.health(),
+        "orbital_url": settings.orbital_url,
         "stt": await stt.health(),
         "tts": await tts.health(),
         "whisper_model": str(settings.whisper_model),
