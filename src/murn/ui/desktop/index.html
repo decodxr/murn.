@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#050607" />
   <title>murn.</title>
-  <link rel="stylesheet" href="/ui/assets/murn.css" />
-  <link rel="stylesheet" href="/ui/assets/vision.css?v=0.6.1" />
+  <link rel="stylesheet" href="/ui/assets/murn.css?v=0.9.0" />
+  <link rel="stylesheet" href="/ui/assets/vision.css?v=0.9.0" />
+  <link rel="stylesheet" href="/ui/assets/glass.css?v=0.9.0" />
 </head>
 <body class="desktop-body">
   <div class="desktop-app">
@@ -49,6 +50,7 @@
         <button class="all-conversations" id="all-conversations">
           <span class="infinity">∞</span>
           <span>ALL CONVERSATIONS</span>
+          <span class="sidebar-summary" id="chat-count">0 chats</span>
         </button>
       </aside>
 
@@ -121,6 +123,7 @@
         <div class="settings-row"><span>vision</span><strong id="settings-vision">—</strong></div>
         <div class="settings-row"><span>ollama</span><strong id="settings-ollama">—</strong></div>
         <div class="settings-row"><span>comfyui</span><strong id="settings-comfy">—</strong></div>
+        <div class="settings-row"><span>browser</span><strong id="settings-browser">—</strong></div>
         <div class="settings-row"><span>voice</span><strong id="settings-voice">—</strong></div>
       </div>
 
@@ -135,8 +138,21 @@
     </form>
   </dialog>
 
+  <dialog class="delete-chat-modal" id="delete-chat-modal">
+    <div class="delete-chat-card">
+      <div class="delete-chat-icon">⌫</div>
+      <h2>delete this chat?</h2>
+      <p>Only this conversation is removed from chat history. murn.'s long-term memory / Obsidian is not touched.</p>
+      <span class="delete-chat-name" id="delete-chat-name">conversation</span>
+      <div class="delete-chat-actions">
+        <button type="button" class="glass-button" id="cancel-delete-chat">cancel</button>
+        <button type="button" class="glass-button danger" id="confirm-delete-chat">delete chat</button>
+      </div>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast"></div>
-  <script src="/ui/assets/desktop.js" defer></script>
-  <script src="/ui/assets/vision.js?v=0.6.1" defer></script>
+  <script src="/ui/assets/desktop.js?v=0.9.0" defer></script>
+  <script src="/ui/assets/vision.js?v=0.9.0" defer></script>
 </body>
 </html>
