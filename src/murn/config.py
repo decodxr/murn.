@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # so changes take effect immediately without restarting the backend.
     system_prompt_path: Path = Path("prompts/system.md")
 
+    # Public internet research. web_open deliberately blocks localhost/private LAN
+    # targets; this gives the model research access without raw access to local services.
+    web_enabled: bool = True
+    web_max_results: int = 6
+    web_open_max_chars: int = 12000
+    web_timeout_seconds: float = 15.0
+
     obsidian_vault: Path = Path("~/Documents/Obsidian").expanduser()
     obsidian_memory_dir: str = "murn"
 
