@@ -1,0 +1,120 @@
+.composer {
+  position: relative;
+}
+
+.attach-button.vision-active {
+  color: var(--accent-2);
+  text-shadow: 0 0 16px rgba(156,108,255,.5);
+}
+
+.vision-attachment-preview {
+  position: absolute;
+  left: 10px;
+  bottom: calc(100% + 8px);
+  z-index: 12;
+  width: min(360px, calc(100% - 20px));
+  min-height: 78px;
+  display: none;
+  grid-template-columns: 62px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 11px;
+  padding: 8px;
+  border: 1px solid #434751;
+  border-radius: 10px;
+  background: rgba(8, 9, 11, .98);
+  box-shadow: 0 18px 48px rgba(0,0,0,.52), 0 0 22px rgba(156,108,255,.08);
+}
+
+.vision-attachment-preview.show {
+  display: grid;
+}
+
+.vision-attachment-preview img {
+  width: 62px;
+  height: 62px;
+  object-fit: cover;
+  border-radius: 7px;
+  border: 1px solid #484c56;
+  background: #050607;
+}
+
+.vision-preview-copy {
+  min-width: 0;
+}
+
+.vision-preview-label {
+  display: block;
+  color: #efeff2;
+  font-size: 10px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.vision-preview-meta {
+  display: block;
+  color: #777b86;
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vision-preview-remove {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #393d46;
+  border-radius: 7px;
+  background: #111318;
+  color: #a5a8b1;
+  cursor: pointer;
+}
+
+.vision-preview-remove:hover {
+  color: #fff;
+  border-color: #666b78;
+}
+
+.composer.vision-drop {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(156,108,255,.25), 0 0 28px rgba(156,108,255,.12);
+}
+
+.vision-message-image {
+  display: block;
+  width: min(100%, 620px);
+  max-height: 440px;
+  object-fit: contain;
+  border: 1px solid #4a4e58;
+  border-radius: 9px;
+  margin: 5px 0 10px;
+  background: #07080a;
+}
+
+.vision-message-caption {
+  display: block;
+  color: #d7d8dd;
+  white-space: pre-wrap;
+}
+
+.vision-processing {
+  margin-top: 8px;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  border: 1px solid #454952;
+  border-radius: 8px;
+  background: rgba(13,15,18,.76);
+}
+
+.vision-processing .vision-model {
+  color: #777b87;
+  font-size: 9px;
+  margin-top: 2px;
+}
+
+.vision-processing .spinner {
+  justify-self: end;
+}
