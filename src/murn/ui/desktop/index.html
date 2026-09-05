@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#050607" />
   <title>murn.</title>
   <link rel="stylesheet" href="/ui/assets/murn.css" />
+  <link rel="stylesheet" href="/ui/assets/vision.css" />
 </head>
 <body class="desktop-body">
   <div class="desktop-app">
@@ -93,7 +94,7 @@
         </div>
 
         <form class="composer" id="composer">
-          <button type="button" class="composer-icon attach-button" title="attachments coming soon">⌕</button>
+          <button type="button" class="composer-icon attach-button" title="anexar imagem">⌕</button>
           <textarea id="message-input" rows="1" placeholder="ask murn..." aria-label="message"></textarea>
           <div class="composer-actions">
             <button type="button" class="composer-icon mic-button" id="desktop-mic" aria-label="voice input">♩</button>
@@ -117,6 +118,7 @@
 
       <div class="settings-grid">
         <div class="settings-row"><span>model</span><strong id="settings-model">—</strong></div>
+        <div class="settings-row"><span>vision</span><strong id="settings-vision">—</strong></div>
         <div class="settings-row"><span>ollama</span><strong id="settings-ollama">—</strong></div>
         <div class="settings-row"><span>comfyui</span><strong id="settings-comfy">—</strong></div>
         <div class="settings-row"><span>voice</span><strong id="settings-voice">—</strong></div>
@@ -135,5 +137,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="/ui/assets/desktop.js" defer></script>
+  <script src="/ui/assets/vision.js" defer></script>
 </body>
 </html>
