@@ -2,7 +2,7 @@ import json
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -26,9 +26,23 @@ from murn.sessions import SessionStore
 from murn.tools.registry import ToolRegistry
 
 UI_DIR = Path(__file__).parent / "ui"
+UI_VERSION = "0.9.1"
 
-app = FastAPI(title="murn.", version="0.8.0")
+app = FastAPI(title="murn.", version="0.9.1")
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
+
+
+@app.middleware("http")
+async def disable_ui_cache(request: Request, call_next):
+    """The desktop WebKit view is long-lived; never let it pin an old local UI build."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/ui/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        response.headers["X-Murn-UI-Version"] = UI_VERSION
+    return response
+
 
 llm = OllamaProvider(settings.ollama_url, settings.ollama_model)
 vision = OllamaVisionProvider(settings.ollama_url, settings.vision_model)
@@ -134,7 +148,13 @@ async def _read_image_upload(file: UploadFile) -> tuple[bytes, str]:
 
 @app.get("/", include_in_schema=False)
 async def desktop_ui():
-    return FileResponse(UI_DIR / "desktop" / "index.html")
+    return FileResponse(
+        UI_DIR / "desktop" / "index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "X-Murn-UI-Version": UI_VERSION,
+        },
+    )
 
 
 @app.get("/mobile", include_in_schema=False)
@@ -147,6 +167,8 @@ async def mobile_ui():
 async def health() -> dict[str, object]:
     return {
         "murn": True,
+        "version": "0.9.1",
+        "ui_version": UI_VERSION,
         "model": settings.ollama_model,
         "ollama": await llm.health(),
         "vision_model": settings.vision_model,
@@ -258,8 +280,6 @@ async def vision_chat(
     sessions.append(session_id, "user", saved_user_message)
 
     try:
-        # The normal text model and the vision model share the same GPU. Release
-        # llama3.1 before loading vision; vision itself uses keep_alive=0.
         await llm.unload()
         answer = await vision.analyze(image, question, history)
     except Exception as exc:
