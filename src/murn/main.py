@@ -58,7 +58,12 @@ stt = WhisperCppProvider(
 tts = PiperTTSProvider(settings.piper_model, settings.audio_dir)
 sessions = SessionStore(settings.session_db)
 tools = ToolRegistry(memory, semantic_memory, images, llm=llm)
-agent = Agent(llm, tools, settings.agent_max_steps)
+agent = Agent(
+    llm,
+    tools,
+    settings.agent_max_steps,
+    settings.system_prompt_path,
+)
 
 
 def _session_for(request: ChatRequest) -> tuple[str, list[dict[str, str]]]:
@@ -157,6 +162,7 @@ async def health() -> dict[str, object]:
         "obsidian_vault": str(settings.obsidian_vault),
         "session_db": str(settings.session_db),
         "semantic_db": str(settings.semantic_db),
+        "system_prompt": str(settings.system_prompt_path),
         "ui": True,
     }
 
