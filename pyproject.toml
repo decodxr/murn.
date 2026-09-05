@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "murn-ai"
-version = "0.8.0"
-description = "Local-first AI agent with memory, web research, Orbital browser control, inline image generation, image understanding, voice, desktop UI and mobile companion."
+version = "0.9.1"
+description = "Local-first AI agent with memory, web research, Orbital browser control, liquid-glass desktop UI, inline image generation, image understanding, voice, desktop UI and mobile companion."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
