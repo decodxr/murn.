@@ -4,6 +4,7 @@ from typing import Any
 from murn.memory.obsidian import ObsidianMemory
 from murn.memory.semantic import SemanticMemory
 from murn.providers.comfyui import ComfyUIProvider
+from murn.providers.ollama import OllamaProvider
 
 
 class ToolRegistry:
@@ -12,10 +13,12 @@ class ToolRegistry:
         memory: ObsidianMemory,
         semantic_memory: SemanticMemory,
         images: ComfyUIProvider,
+        llm: OllamaProvider | None = None,
     ) -> None:
         self.memory = memory
         self.semantic_memory = semantic_memory
         self.images = images
+        self.llm = llm
 
     def definitions(self) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = [
@@ -109,6 +112,10 @@ class ToolRegistry:
             return {"saved": True, **result}
 
         if name == "generate_image":
+            # The local text LLM and ComfyUI share the same GPU. Release the LLM
+            # first so an 8 GB card has room for the diffusion/text-encoder stack.
+            if self.llm is not None:
+                await self.llm.unload()
             return await self.images.generate(
                 prompt=str(arguments["prompt"]),
                 negative_prompt=str(arguments.get("negative_prompt", "")),
