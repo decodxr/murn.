@@ -34,6 +34,8 @@ class WebProvider:
     def _unwrap_duckduckgo_url(url: str) -> str:
         if url.startswith("//"):
             url = f"https:{url}"
+        elif url.startswith("/"):
+            url = f"https://duckduckgo.com{url}"
         parsed = urlparse(url)
         if parsed.hostname and parsed.hostname.endswith("duckduckgo.com"):
             target = parse_qs(parsed.query).get("uddg", [""])[0]
