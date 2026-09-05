@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "llama3.1:8b"
     embedding_model: str = "embeddinggemma"
+    vision_model: str = "qwen2.5vl:3b"
+    vision_max_mb: int = 20
 
     obsidian_vault: Path = Path("~/Documents/Obsidian").expanduser()
     obsidian_memory_dir: str = "murn"
@@ -52,6 +54,10 @@ class Settings(BaseSettings):
     @property
     def audio_dir(self) -> Path:
         return self.data_dir.expanduser() / "audio"
+
+    @property
+    def vision_dir(self) -> Path:
+        return self.data_dir.expanduser() / "vision"
 
 
 settings = Settings()
