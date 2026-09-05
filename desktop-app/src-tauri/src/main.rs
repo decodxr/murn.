@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
     process::Command,
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -31,6 +31,16 @@ fn configured_url() -> String {
     }
 
     format!("http://127.0.0.1:{DESKTOP_BACKEND_PORT}")
+}
+
+fn cache_busted_url() -> String {
+    let base = configured_url();
+    let separator = if base.contains('?') { '&' } else { '?' };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    format!("{base}{separator}murn_launch={stamp}")
 }
 
 fn apply_linux_webkit_workarounds() {
@@ -89,7 +99,7 @@ fn main() {
             start_backend_services();
 
             let url = if desktop_backend_ready() {
-                WebviewUrl::External(configured_url().parse()?)
+                WebviewUrl::External(cache_busted_url().parse()?)
             } else {
                 WebviewUrl::App("offline.html".into())
             };
