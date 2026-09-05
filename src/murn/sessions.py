@@ -113,6 +113,15 @@ class SessionStore:
             for message in self.messages(session_id)
         ]
 
+    @staticmethod
+    def _title_source(content: str) -> str:
+        text = content.strip()
+        if text.startswith("[[murn-image:"):
+            marker_end = text.find("]]" )
+            if marker_end >= 0:
+                text = text[marker_end + 2 :].lstrip()
+        return text
+
     def append(self, session_id: str, role: str, content: str) -> None:
         if role not in {"user", "assistant"}:
             raise ValueError(f"Unsupported session role: {role}")
@@ -127,7 +136,7 @@ class SessionStore:
 
             title = session["title"]
             if role == "user" and title == "New chat":
-                one_line = " ".join(content.strip().split())
+                one_line = " ".join(self._title_source(content).split())
                 title = one_line[:64] or "New chat"
 
             connection.execute(
