@@ -6,6 +6,7 @@
     health: null,
     sessions: [],
     currentSessionId: null,
+    pendingDeleteSessionId: null,
     sending: false,
     recorder: null,
     recordedChunks: [],
@@ -19,10 +20,11 @@
     sessionGroups: $('#session-groups'),
     search: $('#session-search'),
     newChat: $('#new-chat'),
+    allConversations: $('#all-conversations'),
+    chatCount: $('#chat-count'),
     title: $('#conversation-title'),
     meta: $('#conversation-meta'),
     messageList: $('#message-list'),
-    welcome: $('#welcome-card'),
     composer: $('#composer'),
     input: $('#message-input'),
     send: $('#send-button'),
@@ -32,6 +34,10 @@
     openSettings: $('#open-settings'),
     mobileUrl: $('#mobile-url'),
     copyMobileUrl: $('#copy-mobile-url'),
+    deleteModal: $('#delete-chat-modal'),
+    deleteName: $('#delete-chat-name'),
+    cancelDelete: $('#cancel-delete-chat'),
+    confirmDelete: $('#confirm-delete-chat'),
   };
 
   function escapeHtml(value) {
@@ -78,10 +84,11 @@
   }
 
   function toast(message) {
+    if (!els.toast) return;
     els.toast.textContent = message;
     els.toast.classList.add('show');
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => els.toast.classList.remove('show'), 1800);
+    toast.timer = setTimeout(() => els.toast.classList.remove('show'), 2100);
   }
 
   async function api(path, options = {}) {
@@ -109,18 +116,28 @@
       $('#settings-model').textContent = health.model || '—';
       $('#settings-ollama').textContent = health.ollama ? 'ready' : 'offline';
       $('#settings-comfy').textContent = health.comfyui ? 'ready' : 'offline';
+      $('#settings-browser').textContent = health.browser ? 'orbital ready' : 'offline';
       $('#settings-voice').textContent = health.stt && health.tts ? 'ready' : 'offline';
     } catch (error) {
       $('#desktop-connection').textContent = 'offline';
       $('#desktop-local-status').textContent = 'offline';
+      const browser = $('#settings-browser');
+      if (browser) browser.textContent = 'offline';
       console.error(error);
     }
+  }
+
+  function updateChatCount() {
+    if (!els.chatCount) return;
+    const count = state.sessions.length;
+    els.chatCount.textContent = `${count} ${count === 1 ? 'chat' : 'chats'}`;
   }
 
   async function loadSessions() {
     try {
       const payload = await api('/v1/sessions?limit=200');
       state.sessions = payload.sessions || [];
+      updateChatCount();
       renderSessions();
     } catch (error) {
       els.sessionGroups.innerHTML = `<div class="sessions-empty">${escapeHtml(error.message)}</div>`;
@@ -132,14 +149,17 @@
     const title = session.title || 'New chat';
     const preview = session.message_count ? `${session.message_count} messages` : 'empty conversation';
     return `
-      <button class="session-item${active}" data-session-id="${escapeHtml(session.id)}" title="Right-click to ${pinned ? 'unpin' : 'pin'}">
-        <span class="session-bubble${pinned ? ' pin-mark' : ''}"></span>
-        <span>
-          <span class="session-title">${escapeHtml(title)}</span>
-          <span class="session-preview">${escapeHtml(preview)}</span>
-        </span>
-        <span class="session-time">${escapeHtml(formatSessionTime(session.updated_at))}</span>
-      </button>`;
+      <div class="session-item${active}" data-session-id="${escapeHtml(session.id)}">
+        <button class="session-open" type="button" title="Right-click to ${pinned ? 'unpin' : 'pin'}">
+          <span class="session-bubble${pinned ? ' pin-mark' : ''}"></span>
+          <span>
+            <span class="session-title">${escapeHtml(title)}</span>
+            <span class="session-preview">${escapeHtml(preview)}</span>
+          </span>
+          <span class="session-time">${escapeHtml(formatSessionTime(session.updated_at))}</span>
+        </button>
+        <button class="session-delete" type="button" title="delete chat" aria-label="delete ${escapeHtml(title)}">×</button>
+      </div>`;
   }
 
   function renderSessions() {
@@ -174,11 +194,18 @@
 
     els.sessionGroups.innerHTML = html || '<div class="sessions-empty">no conversations found.</div>';
 
-    $$('.session-item', els.sessionGroups).forEach((button) => {
-      button.addEventListener('click', () => openSession(button.dataset.sessionId));
-      button.addEventListener('contextmenu', (event) => {
+    $$('.session-item', els.sessionGroups).forEach((item) => {
+      const sessionId = item.dataset.sessionId;
+      $('.session-open', item)?.addEventListener('click', () => openSession(sessionId));
+      $('.session-delete', item)?.addEventListener('click', (event) => {
         event.preventDefault();
-        togglePin(button.dataset.sessionId);
+        event.stopPropagation();
+        askDeleteSession(sessionId);
+      });
+      item.addEventListener('contextmenu', (event) => {
+        if (event.target.closest?.('.session-delete')) return;
+        event.preventDefault();
+        togglePin(sessionId);
       });
     });
   }
@@ -191,6 +218,48 @@
     toast(state.pins.has(sessionId) ? 'conversation pinned' : 'conversation unpinned');
   }
 
+  function askDeleteSession(sessionId) {
+    if (!sessionId || state.sending || !els.deleteModal) return;
+    const session = state.sessions.find((item) => item.id === sessionId);
+    state.pendingDeleteSessionId = sessionId;
+    els.deleteName.textContent = session?.title || 'New chat';
+    els.deleteModal.showModal();
+  }
+
+  function closeDeleteDialog() {
+    state.pendingDeleteSessionId = null;
+    els.deleteModal?.close();
+  }
+
+  async function deletePendingSession() {
+    const sessionId = state.pendingDeleteSessionId;
+    if (!sessionId || state.sending) return;
+
+    const deletingCurrent = state.currentSessionId === sessionId;
+    els.confirmDelete.disabled = true;
+
+    try {
+      await api(`/v1/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+      state.pins.delete(sessionId);
+      localStorage.setItem('murn:pins', JSON.stringify([...state.pins]));
+      if (deletingCurrent) state.currentSessionId = null;
+      closeDeleteDialog();
+      await loadSessions();
+
+      if (deletingCurrent) {
+        const next = state.sessions[0];
+        if (next) await openSession(next.id);
+        else await createSession();
+      }
+
+      toast('chat deleted · memory untouched');
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      els.confirmDelete.disabled = false;
+    }
+  }
+
   function clearMessages() {
     els.messageList.innerHTML = '';
   }
@@ -201,7 +270,7 @@
   }
 
   function appendMessage(role, content = '', createdAt = null) {
-    els.welcome?.remove();
+    $('#welcome-card')?.remove();
     const wrapper = document.createElement('article');
     wrapper.className = `message ${role === 'assistant' ? 'murn' : 'user'}`;
     wrapper.innerHTML = `
@@ -268,6 +337,10 @@
     const bits = [];
     if (args.query) bits.push(String(args.query).slice(0, 70));
     if (args.prompt) bits.push(String(args.prompt).slice(0, 70));
+    if (args.url) bits.push(String(args.url).replace(/^https?:\/\//, '').slice(0, 70));
+    if (args.text) bits.push(`“${String(args.text).slice(0, 44)}”`);
+    if (args.element_id != null) bits.push(`#${args.element_id}`);
+    if (args.key) bits.push(String(args.key));
     if (args.width && args.height) bits.push(`${args.width}x${args.height}`);
     return bits.join(' · ') || 'running locally';
   }
@@ -275,7 +348,9 @@
   function toolSymbol(name) {
     if (name.includes('memory')) return '◎';
     if (name.includes('image')) return '▧';
-    return '⌁';
+    if (name.startsWith('browser_')) return '◫';
+    if (name.startsWith('web_')) return '⌁';
+    return '◇';
   }
 
   function appendToolStart(messageBody, name, args) {
@@ -320,11 +395,21 @@
     if (card) {
       const elapsed = (performance.now() - Number(card.dataset.started || performance.now())) / 1000;
       $('.elapsed', card).textContent = `${elapsed.toFixed(1)}s`;
-      $('.spinner', card).replaceWith(document.createTextNode('✓'));
+      $('.spinner', card).replaceWith(document.createTextNode(result?.ok === false ? '×' : '✓'));
       const detail = $('.tool-detail', card);
       if (name === 'memory_search') {
         const count = result?.results?.length ?? 0;
         detail.textContent = `found ${count} relevant ${count === 1 ? 'note' : 'notes'}`;
+      } else if (name === 'web_search') {
+        const count = result?.results?.length ?? 0;
+        detail.textContent = `${count} web result${count === 1 ? '' : 's'} · ${result?.engine || 'search'}`;
+      } else if (name === 'web_open') {
+        detail.textContent = result?.title ? String(result.title).slice(0, 78) : 'page read';
+      } else if (name === 'browser_snapshot') {
+        const count = result?.elements?.length ?? 0;
+        detail.textContent = `${result?.title || 'page'} · ${count} interactive elements`;
+      } else if (name.startsWith('browser_')) {
+        detail.textContent = result?.title || result?.url || (result?.ok === false ? 'failed' : 'orbital · done');
       } else if (name === 'generate_image') {
         detail.textContent = `comfyui · ${result?.images?.length || 0} image${result?.images?.length === 1 ? '' : 's'} · done`;
       } else {
@@ -501,6 +586,21 @@
   els.search.addEventListener('input', renderSessions);
   els.mic.addEventListener('click', toggleDesktopMic);
 
+  els.allConversations?.addEventListener('click', () => {
+    els.search.value = '';
+    renderSessions();
+    els.sessionGroups.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  els.cancelDelete?.addEventListener('click', closeDeleteDialog);
+  els.confirmDelete?.addEventListener('click', deletePendingSession);
+  els.deleteModal?.addEventListener('click', (event) => {
+    if (event.target === els.deleteModal) closeDeleteDialog();
+  });
+  els.deleteModal?.addEventListener('cancel', () => {
+    state.pendingDeleteSessionId = null;
+  });
+
   els.openSettings.addEventListener('click', () => {
     const mobile = `${window.location.protocol}//${window.location.host}/mobile`;
     els.mobileUrl.textContent = mobile;
@@ -513,9 +613,15 @@
   });
 
   document.addEventListener('keydown', (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    const modifier = event.ctrlKey || event.metaKey;
+    if (modifier && event.key.toLowerCase() === 'k') {
       event.preventDefault();
       els.search.focus();
+      els.search.select();
+    }
+    if (modifier && event.key.toLowerCase() === 'n') {
+      event.preventDefault();
+      createSession();
     }
   });
 
