@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     web_open_max_chars: int = 12000
     web_timeout_seconds: float = 15.0
 
+    # Orbital/Chromium control through Chrome DevTools Protocol. Keep this endpoint
+    # bound to loopback only; it can control the logged-in browser session.
+    browser_enabled: bool = True
+    orbital_url: str = "http://127.0.0.1:9222"
+    browser_timeout_seconds: float = 12.0
+    browser_snapshot_max_chars: int = 12000
+    browser_snapshot_max_elements: int = 120
+
     obsidian_vault: Path = Path("~/Documents/Obsidian").expanduser()
     obsidian_memory_dir: str = "murn"
 
@@ -51,8 +59,7 @@ class Settings(BaseSettings):
     piper_model: Path = Path("~/.local/share/murn/voices/pt_BR-faber-medium.onnx")
     audio_max_mb: int = 25
 
-    orbital_url: str | None = None
-    agent_max_steps: int = 8
+    agent_max_steps: int = 12
 
     @property
     def session_db(self) -> Path:
