@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+from murn.config import settings
 from murn.memory.obsidian import ObsidianMemory
 from murn.memory.semantic import SemanticMemory
 from murn.providers.comfyui import ComfyUIProvider
@@ -21,7 +22,12 @@ class ToolRegistry:
         self.semantic_memory = semantic_memory
         self.images = images
         self.llm = llm
-        self.web = web
+        self.web = web or WebProvider(
+            enabled=settings.web_enabled,
+            max_results=settings.web_max_results,
+            open_max_chars=settings.web_open_max_chars,
+            timeout_seconds=settings.web_timeout_seconds,
+        )
 
     def definitions(self) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = [
@@ -64,7 +70,7 @@ class ToolRegistry:
             },
         ]
 
-        if self.web is not None and self.web.enabled:
+        if self.web.enabled:
             tools.extend(
                 [
                     {
@@ -163,16 +169,12 @@ class ToolRegistry:
             return {"saved": True, **result}
 
         if name == "web_search":
-            if self.web is None:
-                raise RuntimeError("Web provider is not configured.")
             return await self.web.search(
                 query=str(arguments["query"]),
                 limit=arguments.get("limit"),
             )
 
         if name == "web_open":
-            if self.web is None:
-                raise RuntimeError("Web provider is not configured.")
             return await self.web.open(
                 url=str(arguments["url"]),
                 max_chars=arguments.get("max_chars"),
