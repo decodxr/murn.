@@ -27,12 +27,14 @@
   const preview = document.createElement('div');
   preview.className = 'vision-attachment-preview';
   preview.innerHTML = `
-    <img alt="imagem anexada" />
+    <div class="vision-preview-thumb">
+      <img alt="imagem anexada" />
+      <button type="button" class="vision-preview-remove" aria-label="remover imagem">×</button>
+    </div>
     <span class="vision-preview-copy">
       <span class="vision-preview-label">IMAGE / READY</span>
       <span class="vision-preview-meta"></span>
     </span>
-    <button type="button" class="vision-preview-remove" aria-label="remover imagem">×</button>
   `;
   composer.appendChild(preview);
 
@@ -82,6 +84,7 @@
     image.src = state.previewUrl;
     meta.textContent = `${file.name || 'clipboard image'} · ${humanSize(file.size)}`;
     preview.classList.add('show');
+    composer.classList.add('has-vision-attachment');
     attach.classList.add('vision-active');
     input.placeholder = 'pergunte algo sobre a imagem...';
     input.focus();
@@ -91,6 +94,7 @@
     state.file = null;
     fileInput.value = '';
     preview.classList.remove('show');
+    composer.classList.remove('has-vision-attachment');
     attach.classList.remove('vision-active');
     input.placeholder = 'ask murn...';
     if (!keepPreviewUrl && state.previewUrl) {
@@ -218,6 +222,54 @@
     });
   }
 
+  function fileFromDataUrl(dataUrl) {
+    try {
+      const match = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/i);
+      if (!match) return null;
+      const mime = match[1].toLowerCase();
+      const binary = atob(match[2]);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      const ext = mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1];
+      return new File([bytes], `clipboard.${ext}`, { type: mime });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function imageFromClipboardEvent(event) {
+    const clipboard = event.clipboardData;
+    if (!clipboard) return null;
+
+    const directFile = [...(clipboard.files || [])].find((file) => validImage(file));
+    if (directFile) return directFile;
+
+    for (const item of [...(clipboard.items || [])]) {
+      if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+      const file = item.getAsFile?.();
+      if (file && validImage(file)) return file;
+    }
+
+    const html = clipboard.getData?.('text/html') || '';
+    const dataImage = html.match(/src=["'](data:image\/(?:png|jpeg|webp);base64,[^"']+)["']/i)?.[1];
+    return dataImage ? fileFromDataUrl(dataImage) : null;
+  }
+
+  async function imageFromNavigatorClipboard() {
+    if (!window.isSecureContext || !navigator.clipboard?.read) return null;
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((candidate) => ['image/png', 'image/jpeg', 'image/webp'].includes(candidate));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const ext = type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
+        return new File([blob], `clipboard.${ext}`, { type });
+      }
+    } catch (_) {}
+    return null;
+  }
+
   async function refreshVisionHealth() {
     try {
       const response = await fetch('/health');
@@ -341,10 +393,19 @@
     setPendingFile(file);
   });
 
-  input.addEventListener('paste', (event) => {
-    const item = [...(event.clipboardData?.items || [])].find((entry) => entry.type.startsWith('image/'));
-    const file = item?.getAsFile();
-    if (file) setPendingFile(file);
+  // WebKit/Tauri can dispatch image clipboard data to the document instead of the
+  // textarea. Listen globally so Ctrl+V works anywhere inside the desktop app.
+  document.addEventListener('paste', async (event) => {
+    if (state.busy) return;
+
+    let file = imageFromClipboardEvent(event);
+    if (!file) file = await imageFromNavigatorClipboard();
+    if (!file) return; // normal text paste keeps working untouched
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setPendingFile(file);
+    toast('imagem colada');
   }, true);
 
   // desktop.js owns normal chat. Capture only submissions that currently carry
@@ -376,9 +437,8 @@
   }
 
   document.querySelector('#new-chat')?.addEventListener('click', () => {
-    // desktop.js creates the session asynchronously; the session observer above
-    // picks up its new active item after the sidebar rerenders.
     state.sessionId = '';
+    clearPending();
   }, true);
 
   renderStoredVisionImages(messageList);
