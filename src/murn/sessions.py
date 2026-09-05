@@ -107,20 +107,23 @@ class SessionStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def history(self, session_id: str) -> list[dict[str, str]]:
-        return [
-            {"role": message["role"], "content": message["content"]}
-            for message in self.messages(session_id)
-        ]
-
     @staticmethod
-    def _title_source(content: str) -> str:
+    def _without_image_marker(content: str) -> str:
         text = content.strip()
         if text.startswith("[[murn-image:"):
             marker_end = text.find("]]" )
             if marker_end >= 0:
                 text = text[marker_end + 2 :].lstrip()
         return text
+
+    def history(self, session_id: str) -> list[dict[str, str]]:
+        return [
+            {
+                "role": message["role"],
+                "content": self._without_image_marker(message["content"]),
+            }
+            for message in self.messages(session_id)
+        ]
 
     def append(self, session_id: str, role: str, content: str) -> None:
         if role not in {"user", "assistant"}:
@@ -136,7 +139,7 @@ class SessionStore:
 
             title = session["title"]
             if role == "user" and title == "New chat":
-                one_line = " ".join(self._title_source(content).split())
+                one_line = " ".join(self._without_image_marker(content).split())
                 title = one_line[:64] or "New chat"
 
             connection.execute(
