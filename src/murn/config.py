@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     vision_model: str = "qwen2.5vl:3b"
     vision_max_mb: int = 20
 
+    # Editable personality / behavior prompt. It is read on every message,
+    # so changes take effect immediately without restarting the backend.
+    system_prompt_path: Path = Path("prompts/system.md")
+
     obsidian_vault: Path = Path("~/Documents/Obsidian").expanduser()
     obsidian_memory_dir: str = "murn"
 
