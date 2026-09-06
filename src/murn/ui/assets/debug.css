@@ -1,0 +1,256 @@
+.murn-debug-toggle {
+  border: 1px solid rgba(190, 194, 209, .2);
+  border-radius: 9px;
+  min-height: 31px;
+  padding: 0 10px;
+  background: rgba(12, 14, 18, .58);
+  color: #aeb1ba;
+  font: 600 8px/1 var(--mono, monospace);
+  letter-spacing: .14em;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.murn-debug-toggle:hover,
+.murn-debug-toggle.active {
+  border-color: rgba(196, 180, 236, .38);
+  background: rgba(30, 29, 39, .72);
+  color: #e1ddef;
+}
+
+.murn-debug-toggle .debug-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: #686c76;
+}
+
+.murn-debug-toggle.connected .debug-live-dot {
+  background: #56e69a;
+  box-shadow: 0 0 9px rgba(86, 230, 154, .45);
+}
+
+.mobile-connection > .murn-debug-toggle {
+  justify-self: end;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 6px;
+}
+
+.murn-debug-panel {
+  position: fixed;
+  z-index: 9999;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(460px, calc(100vw - 24px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(196, 200, 216, .22);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 78% 0%, rgba(126, 107, 177, .09), transparent 28%),
+    linear-gradient(180deg, rgba(13, 15, 20, .94), rgba(5, 7, 10, .97));
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+  backdrop-filter: blur(24px) saturate(125%);
+  box-shadow:
+    0 34px 100px rgba(0, 0, 0, .62),
+    inset 0 1px 0 rgba(255, 255, 255, .055);
+  color: #e7e7eb;
+  font-family: var(--mono, monospace);
+  transform: translateX(calc(100% + 30px));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 210ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease;
+}
+
+.murn-debug-panel.open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.murn-debug-head {
+  min-height: 72px;
+  padding: 15px 16px 12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid rgba(190, 194, 209, .11);
+}
+
+.murn-debug-kicker {
+  display: block;
+  color: #858995;
+  font-size: 7px;
+  letter-spacing: .22em;
+}
+
+.murn-debug-head h2 {
+  margin: 5px 0 0;
+  font: 650 16px/1.2 var(--mono, monospace);
+  letter-spacing: -.02em;
+  color: #f1f1f4;
+}
+
+.murn-debug-head h2 span {
+  color: #9b76ff;
+}
+
+.murn-debug-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.murn-debug-icon-button {
+  height: 31px;
+  border: 1px solid rgba(190, 194, 209, .16);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: rgba(255, 255, 255, .025);
+  color: #9296a0;
+  font: 600 7px/1 var(--mono, monospace);
+  letter-spacing: .1em;
+  cursor: pointer;
+}
+
+.murn-debug-icon-button:hover { color: #eeeeF2; border-color: rgba(210,214,230,.3); }
+
+.murn-debug-statusbar {
+  min-height: 38px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid rgba(190, 194, 209, .08);
+  color: #747985;
+  font-size: 7px;
+  letter-spacing: .12em;
+}
+
+.murn-debug-statusbar .live {
+  color: #91d8b2;
+}
+
+.murn-debug-feed {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 10px 18px;
+  scrollbar-width: thin;
+}
+
+.murn-debug-empty {
+  margin: 18px 8px;
+  padding: 20px;
+  border: 1px dashed rgba(190, 194, 209, .15);
+  border-radius: 12px;
+  color: #6f737d;
+  font-size: 9px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.murn-debug-event {
+  position: relative;
+  margin-bottom: 6px;
+  padding: 10px 11px 9px 12px;
+  border: 1px solid rgba(190, 194, 209, .095);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .018);
+}
+
+.murn-debug-event[data-stage="request"] {
+  margin-top: 12px;
+  border-color: rgba(190, 194, 209, .18);
+  background: rgba(255, 255, 255, .035);
+}
+
+.murn-debug-event[data-stage="decision"] { border-left-color: rgba(173, 151, 229, .62); }
+.murn-debug-event[data-stage="tool"] { border-left-color: rgba(132, 153, 189, .55); }
+.murn-debug-event[data-stage="done"] { border-left-color: rgba(86, 230, 154, .48); }
+.murn-debug-event[data-stage="error"] { border-left-color: rgba(255, 111, 145, .72); }
+
+.murn-debug-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: #626772;
+  font-size: 7px;
+  letter-spacing: .07em;
+}
+
+.murn-debug-source {
+  padding: 3px 5px;
+  border: 1px solid rgba(190, 194, 209, .12);
+  border-radius: 5px;
+  color: #a8abb5;
+  text-transform: uppercase;
+}
+
+.murn-debug-trace {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.murn-debug-stage {
+  margin-left: auto;
+  color: #9e91ba;
+  text-transform: uppercase;
+}
+
+.murn-debug-message {
+  margin-top: 7px;
+  color: #d9dae0;
+  font-size: 9px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.murn-debug-data {
+  margin-top: 7px;
+}
+
+.murn-debug-data summary {
+  color: #6f7480;
+  font-size: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.murn-debug-data pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 7px 0 0;
+  padding: 9px;
+  border-radius: 8px;
+  background: rgba(0,0,0,.28);
+  color: #aeb2bd;
+  font: 7px/1.55 var(--mono, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .murn-debug-panel {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: auto;
+    height: min(76svh, 690px);
+    border-radius: 22px;
+    transform: translateY(calc(100% + 24px));
+  }
+
+  .murn-debug-panel.open { transform: translateY(0); }
+  .murn-debug-head { min-height: 66px; }
+  .murn-debug-feed { padding-bottom: 24px; }
+}
