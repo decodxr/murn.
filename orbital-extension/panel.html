@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>murn.</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar glass">
+      <div>
+        <div class="brand">murn<span>.</span></div>
+        <div class="sub">ORBITAL COMPANION</div>
+      </div>
+      <div class="top-actions">
+        <button id="open-murn" class="icon-btn" title="open murn. desktop">↗</button>
+        <div id="status-dot" class="status-dot offline" title="murn. backend"></div>
+      </div>
+    </header>
+
+    <section class="context-card glass">
+      <div class="context-head">
+        <span>CURRENT TAB</span>
+        <button id="refresh-context" class="mini-btn">refresh</button>
+      </div>
+      <div id="tab-title" class="tab-title">loading tab…</div>
+      <div id="tab-url" class="tab-url"></div>
+      <div class="context-actions">
+        <button id="analyze-page">analyze page</button>
+        <button id="ask-selection">selection</button>
+      </div>
+    </section>
+
+    <main id="messages" class="messages">
+      <div class="welcome">
+        <div class="avatar">m<span>.</span></div>
+        <div>
+          <strong>murn. lives here too.</strong>
+          <p>ask about this page, selected text, or anything else.</p>
+        </div>
+      </div>
+    </main>
+
+    <div id="activity" class="activity" hidden></div>
+
+    <form id="composer" class="composer glass">
+      <textarea id="input" rows="1" placeholder="ask murn. about this tab…"></textarea>
+      <div class="composer-row">
+        <button type="button" id="attach-page" class="context-toggle" title="include current page context">⌁ tab</button>
+        <span class="hint">Enter to send · Shift+Enter newline</span>
+        <button type="submit" id="send" class="send">↑</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="panel.js" defer></script>
+</body>
+</html>
