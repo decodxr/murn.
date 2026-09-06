@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import sqlite3
+import sys
 import time
 import uuid
 from contextvars import ContextVar, Token
@@ -20,6 +21,15 @@ _DEBUG_CONTEXT: ContextVar[dict[str, Any]] = ContextVar("murn_debug_context", de
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _process_source() -> str:
+    args = " ".join(sys.argv)
+    if "7331" in args:
+        return "mobile"
+    if "7332" in args:
+        return "desktop"
+    return "local"
 
 
 def compact(value: Any, max_chars: int = 1400) -> Any:
@@ -51,6 +61,7 @@ class DebugBus:
         data_dir = Path(os.getenv("MURN_DATA_DIR", ".murn")).expanduser()
         self.path = path or (data_dir / "debug_events.db")
         self.max_events = max(300, int(max_events))
+        self.process_source = _process_source()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -83,10 +94,13 @@ class DebugBus:
 
     def begin(self, source: str, message: str, session_id: str | None = None) -> tuple[str, Token]:
         trace_id = uuid.uuid4().hex[:10]
+        resolved_source = source or self.process_source
+        if resolved_source in {"agent", "unknown", "local"}:
+            resolved_source = self.process_source
         token = _DEBUG_CONTEXT.set(
             {
                 "trace_id": trace_id,
-                "source": source or "unknown",
+                "source": resolved_source,
                 "session_id": session_id,
                 "started": time.perf_counter(),
             }
@@ -139,7 +153,9 @@ class DebugBus:
         context = self.context()
         timestamp = _utc_now()
         trace = trace_id or context.get("trace_id") or "system"
-        origin = source or context.get("source") or "system"
+        origin = source or context.get("source") or self.process_source
+        if origin in {"agent", "unknown", "local", "system"} and trace != "system":
+            origin = self.process_source
         session = session_id if session_id is not None else context.get("session_id")
         compact_data = compact(data) if data is not None else None
         data_json = json.dumps(compact_data, ensure_ascii=False) if compact_data is not None else None
@@ -153,7 +169,6 @@ class DebugBus:
                 (timestamp, trace, origin, session, stage, message, data_json),
             )
             seq = int(cursor.lastrowid)
-            # Keep the database tiny even if debug is left enabled for weeks.
             connection.execute(
                 "DELETE FROM debug_events WHERE seq <= (SELECT COALESCE(MAX(seq), 0) - ? FROM debug_events)",
                 (self.max_events,),
@@ -209,6 +224,7 @@ def build_debug_router() -> APIRouter:
             "events": await asyncio.to_thread(debug_bus.snapshot, limit),
             "live": True,
             "shared": True,
+            "source": debug_bus.process_source,
         }
 
     @router.delete("/events")
