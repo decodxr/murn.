@@ -13,12 +13,16 @@ class OllamaProvider:
         keep_alive: str = "30m",
         num_ctx: int = 4096,
         num_predict: int = 512,
+        temperature: float = 0.45,
+        top_p: float = 0.9,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.keep_alive = keep_alive
         self.num_ctx = max(1024, int(num_ctx))
         self.num_predict = max(64, int(num_predict))
+        self.temperature = max(0.0, min(2.0, float(temperature)))
+        self.top_p = max(0.05, min(1.0, float(top_p)))
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(180.0, connect=10.0),
             limits=httpx.Limits(max_connections=12, max_keepalive_connections=6),
@@ -33,6 +37,8 @@ class OllamaProvider:
             "options": {
                 "num_ctx": self.num_ctx,
                 "num_predict": self.num_predict,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
             },
         }
 
