@@ -3,18 +3,28 @@
   let frame = 0;
   let pointerX = 0;
   let pointerY = 0;
+  let lastPaint = 0;
 
-  const selector = '.desktop-topbar, .panel, .composer';
+  // Moving a highlight across the full conversation/sidebar panel causes a
+  // large WebKitGTK repaint on every mouse event. Keep the reactive reflection
+  // only on compact surfaces where it is visible and cheap.
+  const selector = '.desktop-topbar, .composer';
+  const minInterval = 42; // ~24fps is plenty for a subtle glass highlight.
 
   function clearSurface(surface) {
     if (!surface) return;
     surface.style.setProperty('--glass-pointer-opacity', '0');
   }
 
-  function paint() {
+  function paint(now) {
     frame = 0;
-    const target = document.elementFromPoint(pointerX, pointerY)?.closest?.(selector) || null;
+    if (now - lastPaint < minInterval) {
+      frame = requestAnimationFrame(paint);
+      return;
+    }
+    lastPaint = now;
 
+    const target = document.elementFromPoint(pointerX, pointerY)?.closest?.(selector) || null;
     if (target !== activeSurface) {
       clearSurface(activeSurface);
       activeSurface = target;
