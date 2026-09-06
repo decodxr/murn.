@@ -89,9 +89,10 @@ def select_tool_definitions(
     )
     web = (
         "pesquisa", "pesquise", "procura", "procure", "buscar na internet", "busca na internet",
-        "na web", "internet", "noticias", "noticia", "hoje", "agora", "atual", "atualmente",
-        "mais recente", "ultima versao", "latest", "news", "site oficial", "documentacao atual",
-        "verifica online", "confere online",
+        "na web", "internet", "noticias", "noticia", "mais recente", "ultima versao", "latest",
+        "news", "site oficial", "documentacao atual", "verifica online", "confere online",
+        "noticias de hoje", "preco hoje", "cotacao hoje", "versao atual", "preco atual",
+        "status atual", "resultado de hoje", "lancamento mais recente",
     )
     browser = (
         "orbital", "navegador", "browser", "abre o site", "abra o site", "abre youtube",
