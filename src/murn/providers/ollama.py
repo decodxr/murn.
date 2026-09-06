@@ -28,7 +28,18 @@ class OllamaProvider:
             limits=httpx.Limits(max_connections=12, max_keepalive_connections=6),
         )
 
-    def _payload(self, messages: list[dict[str, Any]], stream: bool) -> dict[str, Any]:
+    def _payload(
+        self,
+        messages: list[dict[str, Any]],
+        stream: bool,
+        *,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        num_predict: int | None = None,
+    ) -> dict[str, Any]:
+        temp = self.temperature if temperature is None else max(0.0, min(2.0, float(temperature)))
+        nucleus = self.top_p if top_p is None else max(0.05, min(1.0, float(top_p)))
+        predict = self.num_predict if num_predict is None else max(32, int(num_predict))
         return {
             "model": self.model,
             "messages": messages,
@@ -36,9 +47,9 @@ class OllamaProvider:
             "keep_alive": self.keep_alive,
             "options": {
                 "num_ctx": self.num_ctx,
-                "num_predict": self.num_predict,
-                "temperature": self.temperature,
-                "top_p": self.top_p,
+                "num_predict": predict,
+                "temperature": temp,
+                "top_p": nucleus,
             },
         }
 
@@ -84,8 +95,18 @@ class OllamaProvider:
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        *,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        num_predict: int | None = None,
     ) -> dict[str, Any]:
-        payload = self._payload(messages, stream=False)
+        payload = self._payload(
+            messages,
+            stream=False,
+            temperature=temperature,
+            top_p=top_p,
+            num_predict=num_predict,
+        )
         if tools:
             payload["tools"] = tools
 
@@ -98,8 +119,18 @@ class OllamaProvider:
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        *,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        num_predict: int | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        payload = self._payload(messages, stream=True)
+        payload = self._payload(
+            messages,
+            stream=True,
+            temperature=temperature,
+            top_p=top_p,
+            num_predict=num_predict,
+        )
         if tools:
             payload["tools"] = tools
 
