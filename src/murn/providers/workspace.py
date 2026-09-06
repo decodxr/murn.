@@ -60,6 +60,15 @@ class WorkspaceProvider:
             raise ValueError("No workspace root is configured.")
         return self._allowed((self.roots[0] / candidate).resolve())
 
+    @staticmethod
+    def _git_env() -> dict[str, str]:
+        env = os.environ.copy()
+        # Keep fixed read-only git inspection from inheriting user-level helpers.
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env["GIT_CONFIG_GLOBAL"] = os.devnull
+        env["GIT_OPTIONAL_LOCKS"] = "0"
+        return env
+
     def roots_info(self) -> dict[str, Any]:
         return {
             "roots": [str(root) for root in self.roots if root.exists()],
@@ -183,11 +192,12 @@ class WorkspaceProvider:
         if base.is_file():
             base = base.parent
         probe = subprocess.run(
-            ["git", "-C", str(base), "rev-parse", "--show-toplevel"],
+            ["git", "-c", "core.fsmonitor=false", "-C", str(base), "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
+            env=self._git_env(),
         )
         if probe.returncode != 0:
             raise ValueError("Path is not inside a Git repository.")
@@ -196,20 +206,31 @@ class WorkspaceProvider:
     def git_status(self, path: str | None = None) -> dict[str, Any]:
         root = self._git_root(path)
         result = subprocess.run(
-            ["git", "-C", str(root), "status", "--short", "--branch"],
+            ["git", "-c", "core.fsmonitor=false", "-C", str(root), "status", "--short", "--branch"],
             capture_output=True,
             text=True,
             timeout=8,
             check=False,
+            env=self._git_env(),
         )
         return {"root": str(root), "status": result.stdout[:12000], "ok": result.returncode == 0}
 
     def git_diff(self, path: str | None = None, staged: bool = False, max_chars: int = 24000) -> dict[str, Any]:
         root = self._git_root(path)
-        command = ["git", "-C", str(root), "diff"]
+        command = [
+            "git", "-c", "core.fsmonitor=false", "-C", str(root),
+            "diff", "--no-ext-diff", "--no-textconv",
+        ]
         if staged:
             command.append("--cached")
-        result = subprocess.run(command, capture_output=True, text=True, timeout=10, check=False)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=self._git_env(),
+        )
         diff = result.stdout
         truncated = len(diff) > max_chars
         if truncated:
