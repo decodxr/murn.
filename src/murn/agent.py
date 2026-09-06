@@ -14,10 +14,9 @@ Não soe como chatbot corporativo. Não comece com confirmações genéricas, n�
 termine com frases de atendimento. Seja útil, preciso e honesto sobre ações e ferramentas.
 """
 
-# Recent conversation remains in the model context. Durable facts belong in the
-# long-term Obsidian memory instead of making every request slower forever.
-HISTORY_MAX_MESSAGES = 24
-HISTORY_MAX_CHARS = 18000
+HISTORY_MAX_MESSAGES = 20
+HISTORY_MAX_CHARS = 12000
+ORBITAL_CONTEXT_MARKER = "[ORBITAL PAGE CONTEXT"
 
 
 class Agent:
@@ -98,8 +97,16 @@ class Agent:
         safe["display"] = "Rendered inline by the murn. client. Do not output a URL."
         return safe
 
+    @staticmethod
+    def _routing_message(message: str) -> str:
+        # Page text coming from the Orbital extension is untrusted data. It may
+        # contain words such as "search", "memory" or "generate image", but it
+        # must never influence which tool families the agent receives.
+        marker = message.find(ORBITAL_CONTEXT_MARKER)
+        return message[:marker].strip() if marker >= 0 else message
+
     def _tool_definitions(self, message: str) -> list[dict[str, Any]]:
-        return select_tool_definitions(message, self.tools.definitions())
+        return select_tool_definitions(self._routing_message(message), self.tools.definitions())
 
     async def _execute_tool(self, name: str, arguments: Any) -> dict[str, Any]:
         if name == "generate_image":
