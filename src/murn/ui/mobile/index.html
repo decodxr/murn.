@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#050607" />
+  <meta name="theme-color" content="#030406" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>murn. voice</title>
-  <link rel="stylesheet" href="/ui/assets/murn.css" />
+  <link rel="stylesheet" href="/ui/assets/murn.css?v=0.11.0" />
+  <link rel="stylesheet" href="/ui/assets/mobile-v2.css?v=0.11.0" />
 </head>
-<body class="mobile-body">
-  <main class="mobile-shell">
-    <header class="mobile-header">
+<body class="mobile-body mobile-v2-body">
+  <main class="mobile-shell mobile-v2-shell" id="mobile-shell" data-mode="assistant" data-state="standby">
+    <header class="mobile-header mobile-v2-header">
       <div class="brand mobile-brand">
         <span class="brand-word">murn<span class="brand-dot">.</span></span>
         <span class="brand-subtitle">LOCAL AI ASSISTANT</span>
@@ -21,12 +22,24 @@
         <div class="connection-pill">
           <span class="status-dot"></span>
           <span id="phone-connection">CONNECTED TO PC</span>
+          <span aria-hidden="true">›</span>
         </div>
         <div class="mobile-techline" id="phone-techline">LOCAL / LLAMA3.1 / VOICE</div>
       </div>
     </header>
 
-    <section class="mobile-stage">
+    <nav class="mobile-mode-switch" aria-label="mobile voice mode">
+      <button class="mobile-mode-button" id="mode-assistant" type="button" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H9l-4 3v-13Z" /></svg>
+        <span><strong>ASSISTANT</strong><small>VOICE HOME</small></span>
+      </button>
+      <button class="mobile-mode-button" id="mode-voice" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4M9 6v12M13 3v18M17 7v10M21 10v4" /></svg>
+        <span><strong>VOICE MODE</strong><small>FULL SCREEN</small></span>
+      </button>
+    </nav>
+
+    <section class="mobile-stage mobile-v2-stage">
       <div class="mobile-slogan">
         A QUIETER<br />
         INTERNET<br />
@@ -40,65 +53,96 @@
         LISTEN<br />
         CREATE<br />
         LOCALLY<br />
-        ALWAYS.
+        <strong>ALWAYS.</strong>
         <span>—</span>
       </div>
 
-      <div class="orbit">
-        <canvas id="wave-canvas" width="700" height="430" aria-hidden="true"></canvas>
-      </div>
-
-      <div class="mobile-state-title" id="mobile-state-title">STANDBY</div>
-      <div class="mobile-state-subtitle" id="mobile-state-subtitle">ready when you are</div>
-    </section>
-
-    <section class="state-panel" aria-label="voice status">
-      <div class="state-row active" data-state="standby">
-        <span class="state-indicator"></span>
-        <span class="state-name">STANDBY</span>
-        <span class="state-detail">ready</span>
-      </div>
-      <div class="state-row" data-state="listening">
-        <span class="state-indicator"></span>
-        <span class="state-name">LISTENING</span>
-        <span class="state-detail">capturing audio</span>
-      </div>
-      <div class="state-row" data-state="transcribing">
-        <span class="state-indicator"></span>
-        <span class="state-name">TRANSCRIBING</span>
-        <span class="state-detail">turning speech into text</span>
-      </div>
-      <div class="state-row" data-state="thinking">
-        <span class="state-indicator"></span>
-        <span class="state-name">THINKING</span>
-        <span class="state-detail">murn. is processing</span>
-      </div>
-      <div class="state-row" data-state="speaking">
-        <span class="state-indicator"></span>
-        <span class="state-name">SPEAKING</span>
-        <span class="state-detail">sending response</span>
+      <div class="voice-orb" id="voice-orb" data-state="standby">
+        <canvas id="wave-canvas" width="900" height="520" aria-hidden="true"></canvas>
+        <div class="orb-copy">
+          <div class="mobile-state-title" id="mobile-state-title">READY</div>
+          <div class="mobile-state-subtitle" id="mobile-state-subtitle">tap and hold to talk</div>
+        </div>
       </div>
     </section>
 
-    <section class="mobile-actions">
-      <button class="voice-action primary" id="tap-to-talk" type="button">
-        <span class="voice-icon">♩</span>
-        <strong>TAP TO TALK</strong>
-        <small>HOLD TO SPEAK</small>
-      </button>
+    <section class="mobile-assistant-panel" id="assistant-panel" aria-label="assistant voice shortcuts">
+      <div class="mobile-quick-grid">
+        <button class="mobile-quick-action active" type="button" data-intent="ask">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z" /></svg>
+          <strong>Ask</strong>
+          <small>get answers</small>
+        </button>
+        <button class="mobile-quick-action" type="button" data-intent="create">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7V3Z" /><path d="M14 3v5h5M10 13h5M10 17h5" /></svg>
+          <strong>Create</strong>
+          <small>generate</small>
+        </button>
+        <button class="mobile-quick-action" type="button" data-intent="code">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" /></svg>
+          <strong>Code</strong>
+          <small>build</small>
+        </button>
+        <button class="mobile-quick-action" type="button" data-intent="plan">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 22h4M8 14c-1.4-1-2.5-2.7-2.5-4.7A6.5 6.5 0 0 1 18 7c.9 2.8-.2 5.4-2.2 7-.9.7-1.3 1.6-1.3 2H9.5c0-.5-.5-1.4-1.5-2Z" /></svg>
+          <strong>Plan</strong>
+          <small>think deeper</small>
+        </button>
+      </div>
 
-      <button class="voice-action" id="auto-listen" type="button">
-        <span class="voice-icon">▥</span>
-        <strong>AUTO LISTEN</strong>
-        <small>HANDS FREE</small>
+      <button class="assistant-voice-dock" id="assistant-talk" type="button">
+        <span class="assistant-dock-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4" /></svg>
+        </span>
+        <span class="assistant-dock-copy">
+          <strong id="assistant-dock-title">Talk to murn...</strong>
+          <small id="assistant-dock-subtitle">hold to speak · ask mode</small>
+        </span>
+        <span class="assistant-dock-send">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+        </span>
       </button>
     </section>
 
-    <footer class="mobile-footer">
+    <section class="mobile-voice-panel" id="voice-panel" aria-label="full screen voice mode">
+      <div class="voice-state-track" aria-label="voice processing status">
+        <div class="voice-state-step active" data-state="standby">
+          <span class="voice-state-dot"></span><strong>STANDBY</strong><small>ready</small>
+        </div>
+        <div class="voice-state-step" data-state="listening">
+          <span class="voice-state-dot"></span><strong>LISTENING</strong><small>capturing</small>
+        </div>
+        <div class="voice-state-step" data-state="transcribing">
+          <span class="voice-state-dot"></span><strong>TRANSCRIBING</strong><small>to text</small>
+        </div>
+        <div class="voice-state-step" data-state="thinking">
+          <span class="voice-state-dot"></span><strong>THINKING</strong><small>processing</small>
+        </div>
+        <div class="voice-state-step" data-state="speaking">
+          <span class="voice-state-dot"></span><strong>SPEAKING</strong><small>responding</small>
+        </div>
+      </div>
+
+      <div class="mobile-actions">
+        <button class="voice-action primary" id="tap-to-talk" type="button">
+          <span class="voice-icon" aria-hidden="true">♩</span>
+          <strong>TAP TO TALK</strong>
+          <small>HOLD TO SPEAK</small>
+        </button>
+
+        <button class="voice-action" id="auto-listen" type="button">
+          <span class="voice-icon" aria-hidden="true">▥</span>
+          <strong>AUTO LISTEN</strong>
+          <small>HANDS FREE</small>
+        </button>
+      </div>
+    </section>
+
+    <footer class="mobile-footer mobile-v2-footer">
       <div class="desktop-address">
         <span class="monitor-icon"></span>
         <span>
-          DESKTOP: <strong id="desktop-name">MURN-PC</strong><br />
+          <strong id="desktop-name">MURN-PC</strong><br />
           <span id="desktop-ip">—</span>
         </span>
       </div>
@@ -110,6 +154,6 @@
   </main>
 
   <div class="mobile-error" id="mobile-error"></div>
-  <script src="/ui/assets/mobile.js" defer></script>
+  <script src="/ui/assets/mobile.js?v=0.11.0" defer></script>
 </body>
 </html>
