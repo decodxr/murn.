@@ -17,12 +17,17 @@ class Settings(BaseSettings):
     ollama_keep_alive: str = "30m"
     ollama_num_ctx: int = 4096
     ollama_num_predict: int = 512
+    # Slightly conservative sampling keeps the personality while reducing
+    # confident made-up details on a small local model.
+    ollama_temperature: float = 0.45
+    ollama_top_p: float = 0.9
     embedding_model: str = "embeddinggemma"
     vision_model: str = "qwen2.5vl:3b"
     vision_max_mb: int = 20
 
-    # Editable personality / behavior prompt. It is read on every message,
-    # so changes take effect immediately without restarting the backend.
+    # Identity facts are separate from the editable personality/behavior prompt.
+    # Both are read fresh on every request, so edits take effect immediately.
+    identity_prompt_path: Path = Path("prompts/identity.md")
     system_prompt_path: Path = Path("prompts/system.md")
 
     # Public internet research. web_open deliberately blocks localhost/private LAN
