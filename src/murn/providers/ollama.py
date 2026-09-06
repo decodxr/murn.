@@ -6,27 +6,54 @@ import httpx
 
 
 class OllamaProvider:
-    def __init__(self, base_url: str, model: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        keep_alive: str = "30m",
+        num_ctx: int = 4096,
+        num_predict: int = 512,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.keep_alive = keep_alive
+        self.num_ctx = max(1024, int(num_ctx))
+        self.num_predict = max(64, int(num_predict))
+        # Reuse one HTTP connection pool instead of creating a new TCP client
+        # for every token stream / tool step.
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(180.0, connect=10.0),
+            limits=httpx.Limits(max_connections=12, max_keepalive_connections=6),
+        )
+
+    def _payload(self, messages: list[dict[str, Any]], stream: bool) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "messages": messages,
+            "stream": stream,
+            "keep_alive": self.keep_alive,
+            "options": {
+                "num_ctx": self.num_ctx,
+                "num_predict": self.num_predict,
+            },
+        }
 
     async def health(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=3) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
-                return response.is_success
+            response = await self._client.get(f"{self.base_url}/api/tags", timeout=3)
+            return response.is_success
         except httpx.HTTPError:
             return False
 
     async def unload(self) -> bool:
         """Ask Ollama to unload the active model and release its GPU memory."""
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    f"{self.base_url}/api/generate",
-                    json={"model": self.model, "keep_alive": 0},
-                )
-                response.raise_for_status()
+            response = await self._client.post(
+                f"{self.base_url}/api/generate",
+                json={"model": self.model, "keep_alive": 0},
+                timeout=30,
+            )
+            response.raise_for_status()
             return True
         except httpx.HTTPError:
             return False
@@ -36,19 +63,13 @@ class OllamaProvider:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-        }
+        payload = self._payload(messages, stream=False)
         if tools:
             payload["tools"] = tools
 
-        async with httpx.AsyncClient(timeout=180) as client:
-            response = await client.post(f"{self.base_url}/api/chat", json=payload)
-            response.raise_for_status()
-            data = response.json()
-
+        response = await self._client.post(f"{self.base_url}/api/chat", json=payload)
+        response.raise_for_status()
+        data = response.json()
         return data["message"]
 
     async def stream_chat(
@@ -56,18 +77,18 @@ class OllamaProvider:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "stream": True,
-        }
+        payload = self._payload(messages, stream=True)
         if tools:
             payload["tools"] = tools
 
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.strip():
-                        continue
-                    yield json.loads(line)
+        async with self._client.stream(
+            "POST",
+            f"{self.base_url}/api/chat",
+            json=payload,
+            timeout=None,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                yield json.loads(line)
