@@ -11,3 +11,4 @@ build/
 *.egg-info/
 workflows/txt2img_api.json
 desktop-app/src-tauri/target/
+orbital-extension/icons/*.png
