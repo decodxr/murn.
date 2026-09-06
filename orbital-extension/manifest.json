@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "murn. / Orbital Companion",
+  "version": "0.1.0",
+  "description": "Deep local integration between Orbital and murn.",
+  "minimum_chrome_version": "114",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "search",
+    "sidePanel",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:7331/*",
+    "http://127.0.0.1:7332/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "murn."
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "omnibox": {
+    "keyword": "murn."
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}
