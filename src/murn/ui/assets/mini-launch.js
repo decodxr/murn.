@@ -8,6 +8,26 @@
     if (sessionId) localStorage.setItem('murn:mini-session', sessionId);
   }
 
+  function resumeMiniSessionIfNeeded() {
+    const params = new URLSearchParams(location.search);
+    if (params.get('from') !== 'mini') return;
+    const sessionId = localStorage.getItem('murn:mini-session');
+    if (!sessionId) return;
+
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      const target = [...document.querySelectorAll('.session-item')]
+        .find((item) => item.dataset.sessionId === sessionId);
+      if (target) {
+        clearInterval(timer);
+        target.querySelector('.session-open')?.click();
+        return;
+      }
+      if (attempts >= 40) clearInterval(timer);
+    }, 100);
+  }
+
   async function enterMini() {
     rememberActiveSession();
     const invoke = window.__TAURI__?.core?.invoke;
@@ -28,4 +48,6 @@
       enterMini();
     }
   });
+
+  resumeMiniSessionIfNeeded();
 })();
