@@ -8,7 +8,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{LogicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const DESKTOP_BACKEND_PORT: u16 = 7332;
 
@@ -46,20 +46,12 @@ fn cache_busted_url() -> String {
 fn apply_linux_webkit_workarounds() {
     #[cfg(target_os = "linux")]
     {
-        // WebKitGTK can crash immediately on Wayland + NVIDIA when its DMABUF
-        // renderer negotiates an unsupported buffer format. These are the
-        // upstream Tauri-recommended workarounds for that exact Linux case.
         if env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none() {
             env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
         }
         if env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
             env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
-
-        // Optional emergency fallback. The normal launcher does not enable it
-        // because it disables accelerated compositing. Run with
-        // MURN_WEBKIT_SAFE_MODE=1 only if the normal NVIDIA workaround still
-        // crashes on a specific WebKit/driver combination.
         if env::var("MURN_WEBKIT_SAFE_MODE").ok().as_deref() == Some("1") {
             env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
         }
@@ -90,11 +82,50 @@ fn desktop_backend_ready() -> bool {
     false
 }
 
+#[tauri::command]
+fn set_window_mode(window: WebviewWindow, mode: String) -> Result<(), String> {
+    match mode.as_str() {
+        "mini" => {
+            window
+                .set_min_size(Some(LogicalSize::new(360.0, 500.0)))
+                .map_err(|error| error.to_string())?;
+            window
+                .set_size(LogicalSize::new(410.0, 560.0))
+                .map_err(|error| error.to_string())?;
+            window
+                .set_always_on_top(true)
+                .map_err(|error| error.to_string())?;
+            window.center().map_err(|error| error.to_string())?;
+        }
+        "full" => {
+            window
+                .set_always_on_top(false)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_min_size(Some(LogicalSize::new(960.0, 620.0)))
+                .map_err(|error| error.to_string())?;
+            window
+                .set_size(LogicalSize::new(1440.0, 900.0))
+                .map_err(|error| error.to_string())?;
+            window.center().map_err(|error| error.to_string())?;
+        }
+        _ => return Err(format!("unknown window mode: {mode}")),
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_window_pin(window: WebviewWindow, pinned: bool) -> Result<(), String> {
+    window
+        .set_always_on_top(pinned)
+        .map_err(|error| error.to_string())
+}
+
 fn main() {
-    // This must happen before GTK/WebKit is initialized.
     apply_linux_webkit_workarounds();
 
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![set_window_mode, set_window_pin])
         .setup(|app| {
             start_backend_services();
 
