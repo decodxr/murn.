@@ -114,6 +114,11 @@ chrome.omnibox.setDefaultSuggestion({
   description: 'Ask murn. — <match>%s</match>',
 });
 
+chrome.omnibox.onInputStarted.addListener(async () => {
+  const tab = await activeTab();
+  if (tab?.windowId) await openSidePanel(tab.windowId);
+});
+
 chrome.omnibox.onInputChanged.addListener((text, suggest) => {
   suggest([
     { content: text, description: `Ask murn. → <match>${text}</match>` },
