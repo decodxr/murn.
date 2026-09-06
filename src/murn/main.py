@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from murn import __version__
 from murn.agent import Agent
 from murn.config import settings
-from murn.debug import debug_bus
+from murn.debug import build_debug_router, debug_bus
 from murn.integration import build_integration_router
 from murn.memory.obsidian import ObsidianMemory
 from murn.memory.semantic import SemanticMemory
@@ -36,9 +36,6 @@ UI_VERSION = __version__
 
 app = FastAPI(title="murn.", version=APP_VERSION)
 
-# The unpacked murn. Orbital extension talks to the loopback API directly.
-# Only chrome-extension:// origins are allowed cross-origin; ordinary websites
-# do not get blanket access to the local agent API.
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^chrome-extension://[a-p]{32}$",
@@ -51,9 +48,8 @@ app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 @app.middleware("http")
 async def disable_ui_cache(request: Request, call_next):
-    """The desktop WebKit view is long-lived; never let it pin an old local UI build."""
     response = await call_next(request)
-    if request.url.path in {"/", "/mobile", "/mobile/"} or request.url.path.startswith("/ui/"):
+    if request.url.path in {"/", "/mini", "/mini/", "/mobile", "/mobile/"} or request.url.path.startswith("/ui/"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -67,6 +63,8 @@ llm = OllamaProvider(
     keep_alive=settings.ollama_keep_alive,
     num_ctx=settings.ollama_num_ctx,
     num_predict=settings.ollama_num_predict,
+    temperature=settings.ollama_temperature,
+    top_p=settings.ollama_top_p,
 )
 vision = OllamaVisionProvider(settings.ollama_url, settings.vision_model)
 embedding_provider = OllamaEmbeddingProvider(settings.ollama_url, settings.embedding_model)
@@ -100,14 +98,14 @@ agent = Agent(
     tools,
     settings.agent_max_steps,
     settings.system_prompt_path,
+    settings.identity_prompt_path,
 )
 app.include_router(build_integration_router(tools.browser))
+app.include_router(build_debug_router())
 
 
 @app.on_event("startup")
 async def warm_local_model() -> None:
-    # Do not block API startup. The model loads while the UI is opening so the
-    # first real message usually avoids paying the cold-load penalty.
     asyncio.create_task(llm.warm(), name="murn-ollama-warmup")
 
 
@@ -142,10 +140,7 @@ async def _read_audio_upload(file: UploadFile) -> tuple[bytes, str]:
     max_bytes = settings.audio_max_mb * 1024 * 1024
     audio = await file.read(max_bytes + 1)
     if len(audio) > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Audio file is larger than {settings.audio_max_mb} MB.",
-        )
+        raise HTTPException(status_code=413, detail=f"Audio file is larger than {settings.audio_max_mb} MB.")
     if not audio:
         raise HTTPException(status_code=400, detail="Audio upload is empty.")
 
@@ -163,18 +158,12 @@ async def _read_image_upload(file: UploadFile) -> tuple[bytes, str]:
     }
     content_type = (file.content_type or "").lower()
     if content_type not in allowed:
-        raise HTTPException(
-            status_code=415,
-            detail="Formato de imagem não suportado. Use PNG, JPEG ou WebP.",
-        )
+        raise HTTPException(status_code=415, detail="Formato de imagem não suportado. Use PNG, JPEG ou WebP.")
 
     max_bytes = settings.vision_max_mb * 1024 * 1024
     image = await file.read(max_bytes + 1)
     if len(image) > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"A imagem é maior que {settings.vision_max_mb} MB.",
-        )
+        raise HTTPException(status_code=413, detail=f"A imagem é maior que {settings.vision_max_mb} MB.")
     if not image:
         raise HTTPException(status_code=400, detail="A imagem enviada está vazia.")
     return image, allowed[content_type]
@@ -184,6 +173,18 @@ async def _read_image_upload(file: UploadFile) -> tuple[bytes, str]:
 async def desktop_ui():
     return FileResponse(
         UI_DIR / "desktop" / "index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "X-Murn-UI-Version": UI_VERSION,
+        },
+    )
+
+
+@app.get("/mini", include_in_schema=False)
+@app.get("/mini/", include_in_schema=False)
+async def mini_ui():
+    return FileResponse(
+        UI_DIR / "mini" / "index.html",
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "X-Murn-UI-Version": UI_VERSION,
@@ -230,6 +231,8 @@ async def health() -> dict[str, object]:
         "model": settings.ollama_model,
         "ollama": ollama_ok,
         "ollama_keep_alive": settings.ollama_keep_alive,
+        "ollama_temperature": settings.ollama_temperature,
+        "ollama_top_p": settings.ollama_top_p,
         "vision_model": settings.vision_model,
         "vision": vision_ok,
         "embedding_model": settings.embedding_model,
@@ -239,6 +242,9 @@ async def health() -> dict[str, object]:
         "browser": browser_ok,
         "orbital_url": settings.orbital_url,
         "orbital_launcher": str(settings.orbital_launcher),
+        "workspace": settings.workspace_enabled and tools.workspace.configured,
+        "workspace_roots": tools.workspace.roots_info().get("roots", []),
+        "adaptive_intelligence": True,
         "stt": stt_ok,
         "tts": tts_ok,
         "whisper_model": str(settings.whisper_model),
@@ -246,6 +252,7 @@ async def health() -> dict[str, object]:
         "obsidian_vault": str(settings.obsidian_vault),
         "session_db": str(settings.session_db),
         "semantic_db": str(settings.semantic_db),
+        "identity_prompt": str(settings.identity_prompt_path),
         "system_prompt": str(settings.system_prompt_path),
         "debug": True,
         "debug_shared": True,
@@ -421,6 +428,7 @@ async def generate_image(request: ImageGenerateRequest):
             ),
         )
     try:
+        await llm.unload()
         return await images.generate(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
@@ -489,6 +497,7 @@ async def voice_chat(
     file: UploadFile = File(...),
     session_id: str | None = Form(default=None),
     language: str | None = Form(default=None),
+    source: str = Form(default="desktop_voice"),
 ):
     if not stt.configured:
         raise HTTPException(status_code=503, detail="Speech-to-text is not configured.")
@@ -505,7 +514,7 @@ async def voice_chat(
         ChatRequest(
             message=transcription["text"],
             session_id=session_id,
-            source="desktop_voice",
+            source=source[:40] or "desktop_voice",
         )
     )
 
