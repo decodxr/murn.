@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sqlite3
 import time
 import uuid
-from collections import deque
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -43,10 +45,41 @@ def compact(value: Any, max_chars: int = 1400) -> Any:
 
 
 class DebugBus:
-    def __init__(self, max_events: int = 600) -> None:
-        self._events: deque[dict[str, Any]] = deque(maxlen=max_events)
-        self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
-        self._seq = 0
+    """Cross-process debug event bus backed by a tiny shared SQLite database."""
+
+    def __init__(self, path: Path | None = None, max_events: int = 1200) -> None:
+        data_dir = Path(os.getenv("MURN_DATA_DIR", ".murn")).expanduser()
+        self.path = path or (data_dir / "debug_events.db")
+        self.max_events = max(300, int(max_events))
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=5)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=NORMAL")
+        return connection
+
+    def _init_db(self) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS debug_events (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    trace_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    session_id TEXT,
+                    stage TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    data_json TEXT
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_debug_events_trace ON debug_events(trace_id, seq)"
+            )
 
     def begin(self, source: str, message: str, session_id: str | None = None) -> tuple[str, Token]:
         trace_id = uuid.uuid4().hex[:10]
@@ -74,6 +107,25 @@ class DebugBus:
     def context(self) -> dict[str, Any]:
         return dict(_DEBUG_CONTEXT.get())
 
+    @staticmethod
+    def _row_to_event(row: sqlite3.Row) -> dict[str, Any]:
+        data = None
+        if row["data_json"]:
+            try:
+                data = json.loads(row["data_json"])
+            except json.JSONDecodeError:
+                data = row["data_json"]
+        return {
+            "seq": row["seq"],
+            "ts": row["ts"],
+            "trace_id": row["trace_id"],
+            "source": row["source"],
+            "session_id": row["session_id"],
+            "stage": row["stage"],
+            "message": row["message"],
+            "data": data,
+        }
+
     def emit(
         self,
         stage: str,
@@ -85,43 +137,64 @@ class DebugBus:
         session_id: str | None = None,
     ) -> dict[str, Any]:
         context = self.context()
-        self._seq += 1
-        event = {
-            "seq": self._seq,
-            "ts": _utc_now(),
-            "trace_id": trace_id or context.get("trace_id") or "system",
-            "source": source or context.get("source") or "system",
-            "session_id": session_id if session_id is not None else context.get("session_id"),
+        timestamp = _utc_now()
+        trace = trace_id or context.get("trace_id") or "system"
+        origin = source or context.get("source") or "system"
+        session = session_id if session_id is not None else context.get("session_id")
+        compact_data = compact(data) if data is not None else None
+        data_json = json.dumps(compact_data, ensure_ascii=False) if compact_data is not None else None
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO debug_events(ts, trace_id, source, session_id, stage, message, data_json)
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                (timestamp, trace, origin, session, stage, message, data_json),
+            )
+            seq = int(cursor.lastrowid)
+            # Keep the database tiny even if debug is left enabled for weeks.
+            connection.execute(
+                "DELETE FROM debug_events WHERE seq <= (SELECT COALESCE(MAX(seq), 0) - ? FROM debug_events)",
+                (self.max_events,),
+            )
+
+        return {
+            "seq": seq,
+            "ts": timestamp,
+            "trace_id": trace,
+            "source": origin,
+            "session_id": session,
             "stage": stage,
             "message": message,
-            "data": compact(data) if data is not None else None,
+            "data": compact_data,
         }
-        self._events.append(event)
-        for queue in tuple(self._subscribers):
-            try:
-                queue.put_nowait(event)
-            except asyncio.QueueFull:
-                try:
-                    queue.get_nowait()
-                    queue.put_nowait(event)
-                except (asyncio.QueueEmpty, asyncio.QueueFull):
-                    pass
-        return event
 
     def snapshot(self, limit: int = 120) -> list[dict[str, Any]]:
         limit = max(1, min(600, int(limit)))
-        return list(self._events)[-limit:]
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM debug_events ORDER BY seq DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._row_to_event(row) for row in reversed(rows)]
+
+    def events_after(self, seq: int, limit: int = 120) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM debug_events WHERE seq > ? ORDER BY seq ASC LIMIT ?",
+                (max(0, int(seq)), max(1, min(300, int(limit)))),
+            ).fetchall()
+        return [self._row_to_event(row) for row in rows]
+
+    def latest_seq(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute("SELECT COALESCE(MAX(seq), 0) AS seq FROM debug_events").fetchone()
+        return int(row["seq"] if row else 0)
 
     def clear(self) -> None:
-        self._events.clear()
-
-    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=250)
-        self._subscribers.add(queue)
-        return queue
-
-    def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
-        self._subscribers.discard(queue)
+        with self._connect() as connection:
+            connection.execute("DELETE FROM debug_events")
 
 
 debug_bus = DebugBus()
@@ -132,33 +205,42 @@ def build_debug_router() -> APIRouter:
 
     @router.get("/snapshot")
     async def snapshot(limit: int = Query(120, ge=1, le=600)):
-        return {"events": debug_bus.snapshot(limit), "live": True}
+        return {
+            "events": await asyncio.to_thread(debug_bus.snapshot, limit),
+            "live": True,
+            "shared": True,
+        }
 
     @router.delete("/events")
     async def clear_events():
-        debug_bus.clear()
+        await asyncio.to_thread(debug_bus.clear)
         return {"ok": True}
 
     @router.get("/events")
     async def events(backlog: int = Query(0, ge=0, le=300)):
         async def stream():
-            queue = debug_bus.subscribe()
-            try:
-                if backlog:
-                    for event in debug_bus.snapshot(backlog):
-                        payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
-                        yield f"data: {payload}\n\n"
-
-                while True:
-                    try:
-                        event = await asyncio.wait_for(queue.get(), timeout=15)
-                    except TimeoutError:
-                        yield ": murn-debug-ping\n\n"
-                        continue
+            if backlog:
+                initial = await asyncio.to_thread(debug_bus.snapshot, backlog)
+                last_seq = initial[-1]["seq"] if initial else await asyncio.to_thread(debug_bus.latest_seq)
+                for event in initial:
                     payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
                     yield f"data: {payload}\n\n"
-            finally:
-                debug_bus.unsubscribe(queue)
+            else:
+                last_seq = await asyncio.to_thread(debug_bus.latest_seq)
+
+            ping_at = time.monotonic()
+            while True:
+                events_now = await asyncio.to_thread(debug_bus.events_after, last_seq, 120)
+                if events_now:
+                    for event in events_now:
+                        last_seq = max(last_seq, int(event["seq"]))
+                        payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+                        yield f"data: {payload}\n\n"
+                    ping_at = time.monotonic()
+                elif time.monotonic() - ping_at >= 15:
+                    yield ": murn-debug-ping\n\n"
+                    ping_at = time.monotonic()
+                await asyncio.sleep(0.25)
 
         return StreamingResponse(
             stream(),
