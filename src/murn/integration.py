@@ -6,10 +6,12 @@ from typing import Any
 from fastapi import APIRouter
 
 from murn.app_control import open_murn_desktop, open_orbital
+from murn.debug import build_debug_router
 from murn.providers.orbital import OrbitalProvider
 
 
 def build_integration_router(browser: OrbitalProvider) -> APIRouter:
+    root = APIRouter()
     router = APIRouter(prefix="/v1/integration", tags=["integration"])
 
     @router.get("/status")
@@ -44,7 +46,9 @@ def build_integration_router(browser: OrbitalProvider) -> APIRouter:
     async def integration_open_murn() -> dict[str, Any]:
         return await open_murn_desktop()
 
-    return router
+    root.include_router(router)
+    root.include_router(build_debug_router())
+    return root
 
 
 async def _safe_tabs(browser: OrbitalProvider) -> list[dict[str, Any]]:
