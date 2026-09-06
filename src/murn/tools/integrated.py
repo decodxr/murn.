@@ -31,4 +31,9 @@ class IntegratedToolRegistry(ToolRegistry):
     async def execute(self, name: str, arguments: Any) -> dict[str, Any]:
         if name == "browser_launch":
             return await open_orbital()
+        if name == "generate_image":
+            # Semantic memory may have left embeddinggemma resident in Ollama.
+            # Release it before ComfyUI competes for an 8 GB GPU. ToolRegistry
+            # also unloads the chat LLM immediately before generation.
+            await self.semantic_memory.embeddings.unload()
         return await super().execute(name, arguments)
