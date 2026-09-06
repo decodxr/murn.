@@ -8,8 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from murn import __version__
 from murn.agent import Agent
 from murn.config import settings
+from murn.debug import debug_bus
 from murn.integration import build_integration_router
 from murn.memory.obsidian import ObsidianMemory
 from murn.memory.semantic import SemanticMemory
@@ -28,9 +30,9 @@ from murn.schemas import (
 from murn.sessions import SessionStore
 from murn.tools.integrated import IntegratedToolRegistry
 
-APP_VERSION = "0.10.0"
+APP_VERSION = __version__
 UI_DIR = Path(__file__).parent / "ui"
-UI_VERSION = "0.10.0"
+UI_VERSION = __version__
 
 app = FastAPI(title="murn.", version=APP_VERSION)
 
@@ -51,7 +53,7 @@ app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 async def disable_ui_cache(request: Request, call_next):
     """The desktop WebKit view is long-lived; never let it pin an old local UI build."""
     response = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith("/ui/"):
+    if request.url.path in {"/", "/mobile", "/mobile/"} or request.url.path.startswith("/ui/"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -124,6 +126,7 @@ def _session_for(request: ChatRequest) -> tuple[str, list[dict[str, str]]]:
 async def _chat_once(request: ChatRequest) -> ChatResponse:
     session_id, history = _session_for(request)
     sessions.append(session_id, "user", request.message)
+    _trace_id, trace_token = debug_bus.begin(request.source, request.message, session_id)
 
     try:
         answer = await agent.run(request.message, history)
@@ -131,6 +134,8 @@ async def _chat_once(request: ChatRequest) -> ChatResponse:
         return ChatResponse(message=answer, model=settings.ollama_model, session_id=session_id)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        debug_bus.end_scope(trace_token)
 
 
 async def _read_audio_upload(file: UploadFile) -> tuple[bytes, str]:
@@ -189,7 +194,13 @@ async def desktop_ui():
 @app.get("/mobile", include_in_schema=False)
 @app.get("/mobile/", include_in_schema=False)
 async def mobile_ui():
-    return FileResponse(UI_DIR / "mobile" / "index.html")
+    return FileResponse(
+        UI_DIR / "mobile" / "index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "X-Murn-UI-Version": UI_VERSION,
+        },
+    )
 
 
 @app.get("/health")
@@ -236,6 +247,9 @@ async def health() -> dict[str, object]:
         "session_db": str(settings.session_db),
         "semantic_db": str(settings.semantic_db),
         "system_prompt": str(settings.system_prompt_path),
+        "debug": True,
+        "debug_shared": True,
+        "debug_db": str(debug_bus.path),
         "ui": True,
     }
 
@@ -277,6 +291,7 @@ async def chat_stream(request: ChatRequest):
 
     async def stream():
         final_content = ""
+        _trace_id, trace_token = debug_bus.begin(request.source, request.message, session_id)
         yield json.dumps({"type": "session", "session_id": session_id}, ensure_ascii=False) + "\n"
         try:
             async for event in agent.stream(request.message, history):
@@ -287,6 +302,8 @@ async def chat_stream(request: ChatRequest):
             sessions.append(session_id, "assistant", final_content)
         except Exception as exc:
             yield json.dumps({"type": "error", "error": str(exc)}, ensure_ascii=False) + "\n"
+        finally:
+            debug_bus.end_scope(trace_token)
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
@@ -327,12 +344,19 @@ async def vision_chat(
 
     saved_user_message = f"[[murn-image:{image_url}]]\n{question}"
     sessions.append(session_id, "user", saved_user_message)
+    _trace_id, trace_token = debug_bus.begin("vision", question, session_id)
 
     try:
+        debug_bus.emit("vision", "unloading llama for vision model", {"model": settings.vision_model})
         await llm.unload()
+        debug_bus.emit("vision", "vision analysis started", {"bytes": len(image), "model": settings.vision_model})
         answer = await vision.analyze(image, question, history)
+        debug_bus.emit("done", "vision analysis complete", {"output_chars": len(answer)})
     except Exception as exc:
+        debug_bus.emit("error", "vision analysis failed", {"error": str(exc)})
         raise HTTPException(status_code=502, detail=f"Vision failed: {exc}") from exc
+    finally:
+        debug_bus.end_scope(trace_token)
 
     sessions.append(session_id, "assistant", answer)
     return {
@@ -478,7 +502,11 @@ async def voice_chat(
         raise HTTPException(status_code=502, detail=f"STT failed: {exc}") from exc
 
     response = await _chat_once(
-        ChatRequest(message=transcription["text"], session_id=session_id)
+        ChatRequest(
+            message=transcription["text"],
+            session_id=session_id,
+            source="desktop_voice",
+        )
     )
 
     try:
@@ -512,15 +540,17 @@ async def voice_remote(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"STT failed: {exc}") from exc
 
+    _trace_id, trace_token = debug_bus.begin("mobile_voice", transcription["text"])
+    debug_bus.emit("voice", "speech transcribed", {"text": transcription["text"]})
     try:
         answer = await agent.run(transcription["text"])
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Agent failed: {exc}") from exc
-
-    try:
+        debug_bus.emit("voice", "synthesizing spoken response", {"output_chars": len(answer)})
         output_path = await tts.synthesize(answer)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"TTS failed: {exc}") from exc
+        debug_bus.emit("error", "mobile voice request failed", {"error": str(exc)})
+        raise HTTPException(status_code=502, detail=f"Voice agent failed: {exc}") from exc
+    finally:
+        debug_bus.end_scope(trace_token)
 
     return {
         "transcript": transcription["text"],
