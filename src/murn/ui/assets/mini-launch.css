@@ -1,0 +1,29 @@
+.mini-launch-button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(205, 209, 224, .16);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(24, 26, 33, .6), rgba(8, 10, 14, .72));
+  color: #9ca0ab;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 7px;
+  letter-spacing: .13em;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.mini-launch-button span {
+  color: #c2b4ed;
+  font-size: 10px;
+}
+
+.mini-launch-button:hover {
+  color: #ececf2;
+  border-color: rgba(190, 179, 225, .28);
+  background: linear-gradient(180deg, rgba(31, 32, 40, .72), rgba(10, 12, 17, .8));
+}
+
+.mini-launch-button:active { transform: translateY(1px); }
