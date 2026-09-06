@@ -9,8 +9,9 @@
   <link rel="manifest" href="/ui/mobile/manifest.webmanifest" />
   <link rel="icon" href="/ui/mobile/murn-mobile.svg" type="image/svg+xml" />
   <title>murn. voice</title>
-  <link rel="stylesheet" href="/ui/assets/murn.css?v=0.11.0" />
-  <link rel="stylesheet" href="/ui/assets/mobile-v2.css?v=0.11.0" />
+  <link rel="stylesheet" href="/ui/assets/murn.css?v=0.12.0" />
+  <link rel="stylesheet" href="/ui/assets/mobile-v2.css?v=0.12.0" />
+  <link rel="stylesheet" href="/ui/assets/mobile-assistant.css?v=0.12.0" />
 </head>
 <body class="mobile-body mobile-v2-body">
   <main class="mobile-shell mobile-v2-shell" id="mobile-shell" data-mode="assistant" data-state="standby">
@@ -33,7 +34,7 @@
     <nav class="mobile-mode-switch" aria-label="mobile voice mode">
       <button class="mobile-mode-button" id="mode-assistant" type="button" aria-pressed="true">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H9l-4 3v-13Z" /></svg>
-        <span><strong>ASSISTANT</strong><small>VOICE HOME</small></span>
+        <span><strong>ASSISTANT</strong><small>VOICE + CHAT</small></span>
       </button>
       <button class="mobile-mode-button" id="mode-voice" type="button" aria-pressed="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4M9 6v12M13 3v18M17 7v10M21 10v4" /></svg>
@@ -63,12 +64,12 @@
         <canvas id="wave-canvas" width="900" height="520" aria-hidden="true"></canvas>
         <div class="orb-copy">
           <div class="mobile-state-title" id="mobile-state-title">READY</div>
-          <div class="mobile-state-subtitle" id="mobile-state-subtitle">tap and hold to talk</div>
+          <div class="mobile-state-subtitle" id="mobile-state-subtitle">type or hold the mic to talk</div>
         </div>
       </div>
     </section>
 
-    <section class="mobile-assistant-panel" id="assistant-panel" aria-label="assistant voice shortcuts">
+    <section class="mobile-assistant-panel" id="assistant-panel" aria-label="assistant">
       <div class="mobile-quick-grid">
         <button class="mobile-quick-action active" type="button" data-intent="ask">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z" /></svg>
@@ -92,18 +93,34 @@
         </button>
       </div>
 
-      <button class="assistant-voice-dock" id="assistant-talk" type="button">
-        <span class="assistant-dock-icon">
+      <section class="assistant-conversation" id="assistant-conversation" aria-label="assistant conversation">
+        <header class="assistant-conversation-head">
+          <div>
+            <span class="assistant-conversation-kicker">MURN / CONVERSATION</span>
+            <strong>current thread</strong>
+          </div>
+          <button type="button" id="assistant-new-chat">NEW</button>
+        </header>
+        <div class="assistant-transcript" id="assistant-transcript" aria-live="polite">
+          <div class="assistant-empty" id="assistant-empty">
+            <span class="assistant-empty-mark">m<span>.</span></span>
+            <p>fala ou escreve alguma coisa.<br />a conversa aparece aqui.</p>
+          </div>
+        </div>
+      </section>
+
+      <form class="assistant-composer" id="assistant-composer">
+        <button class="assistant-mic" id="assistant-mic" type="button" aria-label="hold to talk">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4" /></svg>
-        </span>
-        <span class="assistant-dock-copy">
-          <strong id="assistant-dock-title">Talk to murn...</strong>
-          <small id="assistant-dock-subtitle">hold to speak · ask mode</small>
-        </span>
-        <span class="assistant-dock-send">
+        </button>
+        <label class="assistant-input-wrap">
+          <span class="assistant-intent" id="assistant-intent">ASK</span>
+          <textarea id="assistant-input" rows="1" placeholder="Talk to murn..." aria-label="message to murn"></textarea>
+        </label>
+        <button class="assistant-send" id="assistant-send" type="submit" aria-label="send">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
-        </span>
-      </button>
+        </button>
+      </form>
     </section>
 
     <section class="mobile-voice-panel" id="voice-panel" aria-label="full screen voice mode">
@@ -156,6 +173,6 @@
   </main>
 
   <div class="mobile-error" id="mobile-error"></div>
-  <script src="/ui/assets/mobile.js?v=0.11.0" defer></script>
+  <script src="/ui/assets/mobile.js?v=0.12.0" defer></script>
 </body>
 </html>
