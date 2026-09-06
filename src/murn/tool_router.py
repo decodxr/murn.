@@ -80,7 +80,7 @@ WORKSPACE = (
     "meu projeto", "meu codigo", "meu repo", "repositorio", "arquivo do projeto", "nesse arquivo",
     "neste arquivo", "workspace", "pasta do projeto", "estrutura do projeto", "git diff",
     "git status", "olha o codigo", "ve o codigo", "procura no codigo", "busca no codigo",
-    "src/", "pyproject.toml", "package.json", "cargo.toml",
+    "procura no projeto", "busca no projeto", "src/", "pyproject.toml", "package.json", "cargo.toml",
 )
 CODING = (
     "codigo", "programa", "programar", "bug", "debug", "python", "javascript", "typescript",
@@ -113,6 +113,17 @@ def _browser_intent(message: str, history: list[dict[str, Any]] | None) -> bool:
     return recent_browser and _has_any(text, BROWSER_FOLLOWUP)
 
 
+def _workspace_intent(text: str) -> bool:
+    code_context = _has_any(text, CODING)
+    return _has_any(text, WORKSPACE) or (
+        code_context and _has_any(text, ("arquivo", "projeto", "repo", "git", "no murn", "do murn"))
+    )
+
+
+def _memory_intent(text: str) -> bool:
+    return _has_any(text, MEMORY_SEARCH) or _has_any(text, MEMORY_WRITE)
+
+
 def _calculator_intent(text: str) -> bool:
     if _has_any(text, CALCULATOR):
         return True
@@ -120,11 +131,6 @@ def _calculator_intent(text: str) -> bool:
 
 
 def _required_browser_action(text: str) -> str:
-    """Return one concrete browser action that must happen for the user's request.
-
-    Snapshot/status remain available as helper tools, but the retry guard should
-    never require every possible browser operation as if they were conjunctive.
-    """
     if "orbital" in text and _has_any(text, ("abre", "abra", "inicia", "inicie", "start")):
         return "browser_launch"
     if _has_any(text, ("volta", "voltar", "back")):
@@ -149,6 +155,8 @@ def required_tool_names(
     """Tools that should be used instead of answering around an explicit action request."""
     text = _norm(message)
     required: set[str] = set()
+    workspace_intent = _workspace_intent(text)
+    memory_intent = _memory_intent(text)
 
     if _image_intent(message, history):
         required.add("generate_image")
@@ -161,7 +169,7 @@ def required_tool_names(
 
     if _browser_intent(message, history):
         required.add(_required_browser_action(text))
-    elif _has_any(text, WEB_EXPLICIT):
+    elif _has_any(text, WEB_EXPLICIT) and not workspace_intent and not memory_intent:
         required.add("web_search")
 
     return required
@@ -192,7 +200,8 @@ def tool_guidance(definitions: list[dict[str, Any]]) -> str:
         sections.append(
             "WORKSPACE: estas ferramentas são leitura local segura. Quando a resposta depender do projeto real, "
             "liste/pesquise/leia os arquivos antes de afirmar estrutura ou código. Não invente arquivo nem resultado "
-            "de execução. workspace_git_status/diff são somente leitura."
+            "de execução. Se uma busca vier truncada/budget_exhausted, estreite a pasta ou a consulta. "
+            "workspace_git_status/diff são somente leitura."
         )
 
     if {"web_search", "web_open"} & names:
@@ -228,6 +237,8 @@ def select_tool_definitions(
     """Return only tool schemas plausibly useful for the current request and follow-up context."""
     text = _norm(message)
     names: set[str] = set()
+    workspace_intent = _workspace_intent(text)
+    memory_intent = _memory_intent(text)
 
     if _has_any(text, MEMORY_SEARCH):
         names.add("memory_search")
@@ -237,8 +248,7 @@ def select_tool_definitions(
     if _calculator_intent(text):
         names.add("calculate")
 
-    code_context = _has_any(text, CODING)
-    if _has_any(text, WORKSPACE) or (code_context and _has_any(text, ("arquivo", "projeto", "repo", "git"))):
+    if workspace_intent:
         names.update(
             {
                 "workspace_roots", "workspace_list", "workspace_read", "workspace_search",
@@ -255,7 +265,7 @@ def select_tool_definitions(
                 "browser_press", "browser_scroll", "browser_back", "browser_forward",
             }
         )
-    elif _has_any(text, WEB_EXPLICIT):
+    elif _has_any(text, WEB_EXPLICIT) and not workspace_intent and not memory_intent:
         names.update({"web_search", "web_open"})
 
     if _image_intent(message, history):
