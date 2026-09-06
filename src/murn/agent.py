@@ -1,8 +1,10 @@
 import json
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+from murn.debug import debug_bus
 from murn.providers.ollama import OllamaProvider
 from murn.tool_router import select_tool_definitions, tool_guidance
 from murn.tools.registry import ToolRegistry
@@ -108,109 +110,270 @@ class Agent:
     def _tool_definitions(self, message: str) -> list[dict[str, Any]]:
         return select_tool_definitions(self._routing_message(message), self.tools.definitions())
 
+    @staticmethod
+    def _tool_names(definitions: list[dict[str, Any]]) -> list[str]:
+        return [
+            str((definition.get("function") or {}).get("name") or "")
+            for definition in definitions
+            if (definition.get("function") or {}).get("name")
+        ]
+
+    @staticmethod
+    def _decision_summary(tool_names: list[str]) -> str:
+        names = set(tool_names)
+        if any(name.startswith("browser_") for name in names):
+            return "o pedido exige interação no Orbital; liberei apenas as ferramentas do navegador necessárias."
+        if {"web_search", "web_open"} & names:
+            return "o pedido parece exigir informação externa/atual; liberei pesquisa e leitura da web."
+        if "generate_image" in names:
+            return "o pedido é visual; liberei a geração local de imagem via ComfyUI."
+        if {"memory_search", "memory_write"} & names:
+            return "o contexto pessoal pode importar; liberei as ferramentas de memória relevantes."
+        return "nenhuma ferramenta parece necessária; vou responder direto com o modelo local."
+
+    @staticmethod
+    def _context_stats(messages: list[dict[str, Any]], tool_names: list[str]) -> dict[str, Any]:
+        chars = 0
+        roles: dict[str, int] = {}
+        for item in messages:
+            role = str(item.get("role") or "unknown")
+            roles[role] = roles.get(role, 0) + 1
+            chars += len(str(item.get("content") or ""))
+        return {
+            "messages": len(messages),
+            "characters": chars,
+            "roles": roles,
+            "tools": tool_names,
+        }
+
+    @staticmethod
+    def _ensure_debug_scope(message: str):
+        if debug_bus.context().get("trace_id"):
+            return None
+        _trace_id, token = debug_bus.begin("agent", message)
+        return token
+
     async def _execute_tool(self, name: str, arguments: Any) -> dict[str, Any]:
         if name == "generate_image":
+            debug_bus.emit("vram", "unloading llama before image generation")
             await self.llm.unload()
         return await self.tools.execute(name, arguments)
 
     async def run(self, message: str, history: list[dict[str, str]] | None = None) -> str:
-        tool_definitions = self._tool_definitions(message)
-        messages = self._messages(message, history, tool_definitions)
+        scope_token = self._ensure_debug_scope(message)
+        started = time.perf_counter()
+        try:
+            tool_definitions = self._tool_definitions(message)
+            tool_names = self._tool_names(tool_definitions)
+            messages = self._messages(message, history, tool_definitions)
+            debug_bus.emit("router", "tool routing complete", {"enabled": tool_names})
+            debug_bus.emit("decision", self._decision_summary(tool_names))
+            debug_bus.emit("context", "model context prepared", self._context_stats(messages, tool_names))
 
-        for _ in range(self.max_steps):
-            assistant = await self.llm.chat(messages, tool_definitions)
-            tool_calls = assistant.get("tool_calls") or []
-
-            if not tool_calls:
-                return assistant.get("content", "")
-
-            messages.append(assistant)
-            for call in tool_calls:
-                function = call.get("function", {})
-                name = function.get("name", "")
-                arguments = function.get("arguments", {})
-                try:
-                    result = await self._execute_tool(name, arguments)
-                except Exception as exc:
-                    result = {"ok": False, "error": str(exc)}
-
-                messages.append(
+            for step in range(1, self.max_steps + 1):
+                model_started = time.perf_counter()
+                debug_bus.emit(
+                    "model",
+                    "model inference started",
+                    {"model": self.llm.model, "step": step, "stream": False},
+                )
+                assistant = await self.llm.chat(messages, tool_definitions)
+                model_ms = (time.perf_counter() - model_started) * 1000
+                tool_calls = assistant.get("tool_calls") or []
+                debug_bus.emit(
+                    "model",
+                    "model step finished",
                     {
-                        "role": "tool",
-                        "tool_name": name,
-                        "content": json.dumps(
-                            self._tool_result_for_model(name, result),
-                            ensure_ascii=False,
-                        ),
-                    }
+                        "step": step,
+                        "duration_ms": round(model_ms, 1),
+                        "tool_calls": [
+                            (call.get("function") or {}).get("name") for call in tool_calls
+                        ],
+                        "output_chars": len(str(assistant.get("content") or "")),
+                    },
                 )
 
-        return "Atingi o limite de etapas de ferramentas antes de concluir este pedido."
+                if not tool_calls:
+                    answer = assistant.get("content", "")
+                    debug_bus.emit(
+                        "done",
+                        "response complete",
+                        {
+                            "total_ms": round((time.perf_counter() - started) * 1000, 1),
+                            "output_chars": len(answer),
+                        },
+                    )
+                    return answer
+
+                messages.append(assistant)
+                for call in tool_calls:
+                    function = call.get("function", {})
+                    name = function.get("name", "")
+                    arguments = function.get("arguments", {})
+                    tool_started = time.perf_counter()
+                    debug_bus.emit("tool", f"{name} started", {"arguments": arguments})
+                    try:
+                        result = await self._execute_tool(name, arguments)
+                    except Exception as exc:
+                        result = {"ok": False, "error": str(exc)}
+                    debug_bus.emit(
+                        "tool",
+                        f"{name} finished",
+                        {
+                            "duration_ms": round((time.perf_counter() - tool_started) * 1000, 1),
+                            "result": result,
+                        },
+                    )
+
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_name": name,
+                            "content": json.dumps(
+                                self._tool_result_for_model(name, result),
+                                ensure_ascii=False,
+                            ),
+                        }
+                    )
+
+            limit = "Atingi o limite de etapas de ferramentas antes de concluir este pedido."
+            debug_bus.emit("limit", "agent tool-step limit reached", {"max_steps": self.max_steps})
+            return limit
+        except Exception as exc:
+            debug_bus.emit("error", "agent failed", {"error": str(exc)})
+            raise
+        finally:
+            if scope_token is not None:
+                debug_bus.end_scope(scope_token)
 
     async def stream(
         self,
         message: str,
         history: list[dict[str, str]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        tool_definitions = self._tool_definitions(message)
-        messages = self._messages(message, history, tool_definitions)
-        visible_parts: list[str] = []
+        scope_token = self._ensure_debug_scope(message)
+        started = time.perf_counter()
+        try:
+            tool_definitions = self._tool_definitions(message)
+            tool_names = self._tool_names(tool_definitions)
+            messages = self._messages(message, history, tool_definitions)
+            visible_parts: list[str] = []
 
-        for _ in range(self.max_steps):
-            content_parts: list[str] = []
-            tool_calls: list[dict[str, Any]] = []
-            seen_tool_calls: set[str] = set()
+            debug_bus.emit("router", "tool routing complete", {"enabled": tool_names})
+            debug_bus.emit("decision", self._decision_summary(tool_names))
+            debug_bus.emit("context", "model context prepared", self._context_stats(messages, tool_names))
 
-            async for chunk in self.llm.stream_chat(messages, tool_definitions):
-                assistant_chunk = chunk.get("message") or {}
-                content = assistant_chunk.get("content") or ""
-                if content:
-                    content_parts.append(content)
-                    visible_parts.append(content)
-                    yield {"type": "token", "content": content}
-
-                for call in assistant_chunk.get("tool_calls") or []:
-                    key = json.dumps(call, sort_keys=True, ensure_ascii=False)
-                    if key not in seen_tool_calls:
-                        seen_tool_calls.add(key)
-                        tool_calls.append(call)
-
-            assistant: dict[str, Any] = {
-                "role": "assistant",
-                "content": "".join(content_parts),
-            }
-            if tool_calls:
-                assistant["tool_calls"] = tool_calls
-
-            if not tool_calls:
-                yield {"type": "done", "content": "".join(visible_parts)}
-                return
-
-            messages.append(assistant)
-            for call in tool_calls:
-                function = call.get("function", {})
-                name = function.get("name", "")
-                arguments = function.get("arguments", {})
-                yield {"type": "tool_start", "name": name, "arguments": arguments}
-
-                try:
-                    result = await self._execute_tool(name, arguments)
-                except Exception as exc:
-                    result = {"ok": False, "error": str(exc)}
-
-                yield {"type": "tool_result", "name": name, "result": result}
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_name": name,
-                        "content": json.dumps(
-                            self._tool_result_for_model(name, result),
-                            ensure_ascii=False,
-                        ),
-                    }
+            for step in range(1, self.max_steps + 1):
+                content_parts: list[str] = []
+                tool_calls: list[dict[str, Any]] = []
+                seen_tool_calls: set[str] = set()
+                model_started = time.perf_counter()
+                first_token_seen = False
+                debug_bus.emit(
+                    "model",
+                    "model inference started",
+                    {"model": self.llm.model, "step": step, "stream": True},
                 )
 
-        limit_message = "Atingi o limite de etapas de ferramentas antes de concluir este pedido."
-        visible_parts.append(limit_message)
-        yield {"type": "token", "content": limit_message}
-        yield {"type": "done", "content": "".join(visible_parts)}
+                async for chunk in self.llm.stream_chat(messages, tool_definitions):
+                    assistant_chunk = chunk.get("message") or {}
+                    content = assistant_chunk.get("content") or ""
+                    if content:
+                        if not first_token_seen:
+                            first_token_seen = True
+                            debug_bus.emit(
+                                "first_token",
+                                "first visible token",
+                                {
+                                    "step": step,
+                                    "latency_ms": round((time.perf_counter() - model_started) * 1000, 1),
+                                },
+                            )
+                        content_parts.append(content)
+                        visible_parts.append(content)
+                        yield {"type": "token", "content": content}
+
+                    for call in assistant_chunk.get("tool_calls") or []:
+                        key = json.dumps(call, sort_keys=True, ensure_ascii=False)
+                        if key not in seen_tool_calls:
+                            seen_tool_calls.add(key)
+                            tool_calls.append(call)
+
+                assistant: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": "".join(content_parts),
+                }
+                if tool_calls:
+                    assistant["tool_calls"] = tool_calls
+
+                debug_bus.emit(
+                    "model",
+                    "model step finished",
+                    {
+                        "step": step,
+                        "duration_ms": round((time.perf_counter() - model_started) * 1000, 1),
+                        "tool_calls": [
+                            (call.get("function") or {}).get("name") for call in tool_calls
+                        ],
+                        "output_chars": len(assistant["content"]),
+                    },
+                )
+
+                if not tool_calls:
+                    final = "".join(visible_parts)
+                    debug_bus.emit(
+                        "done",
+                        "response complete",
+                        {
+                            "total_ms": round((time.perf_counter() - started) * 1000, 1),
+                            "output_chars": len(final),
+                        },
+                    )
+                    yield {"type": "done", "content": final}
+                    return
+
+                messages.append(assistant)
+                for call in tool_calls:
+                    function = call.get("function", {})
+                    name = function.get("name", "")
+                    arguments = function.get("arguments", {})
+                    yield {"type": "tool_start", "name": name, "arguments": arguments}
+
+                    tool_started = time.perf_counter()
+                    debug_bus.emit("tool", f"{name} started", {"arguments": arguments})
+                    try:
+                        result = await self._execute_tool(name, arguments)
+                    except Exception as exc:
+                        result = {"ok": False, "error": str(exc)}
+                    debug_bus.emit(
+                        "tool",
+                        f"{name} finished",
+                        {
+                            "duration_ms": round((time.perf_counter() - tool_started) * 1000, 1),
+                            "result": result,
+                        },
+                    )
+
+                    yield {"type": "tool_result", "name": name, "result": result}
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_name": name,
+                            "content": json.dumps(
+                                self._tool_result_for_model(name, result),
+                                ensure_ascii=False,
+                            ),
+                        }
+                    )
+
+            limit_message = "Atingi o limite de etapas de ferramentas antes de concluir este pedido."
+            visible_parts.append(limit_message)
+            debug_bus.emit("limit", "agent tool-step limit reached", {"max_steps": self.max_steps})
+            yield {"type": "token", "content": limit_message}
+            yield {"type": "done", "content": "".join(visible_parts)}
+        except Exception as exc:
+            debug_bus.emit("error", "agent stream failed", {"error": str(exc)})
+            raise
+        finally:
+            if scope_token is not None:
+                debug_bus.end_scope(scope_token)
