@@ -1,7 +1,7 @@
 [package]
 name = "murn-desktop"
-version = "0.1.0"
-description = "Native desktop shell for murn."
+version = "0.14.0"
+description = "Native desktop shell for murn. with full and mini voice modes."
 authors = ["murn."]
 edition = "2021"
 
