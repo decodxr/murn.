@@ -102,6 +102,13 @@ agent = Agent(
 app.include_router(build_integration_router(tools.browser))
 
 
+@app.on_event("startup")
+async def warm_local_model() -> None:
+    # Do not block API startup. The model loads while the UI is opening so the
+    # first real message usually avoids paying the cold-load penalty.
+    asyncio.create_task(llm.warm(), name="murn-ollama-warmup")
+
+
 def _session_for(request: ChatRequest) -> tuple[str, list[dict[str, str]]]:
     if request.session_id:
         try:
@@ -187,8 +194,6 @@ async def mobile_ui():
 
 @app.get("/health")
 async def health() -> dict[str, object]:
-    # These probes are independent; doing them in parallel makes the desktop
-    # status strip appear much faster than the old serial health check.
     (
         ollama_ok,
         vision_ok,
