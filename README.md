@@ -1,6 +1,6 @@
 # murn.
 
-**murn.** is a local-first personal AI agent with memory, tools, saved conversations, streaming, image generation, image understanding, local voice, a native desktop app, and a voice-only phone companion.
+**murn.** is a local-first personal AI agent with adaptive intelligence, persistent conversations, Obsidian memory, web research, Orbital browser control, safe coding-workspace inspection, image generation, image understanding, local voice, a native desktop app, mini voice mode, mobile companion, and live debug tracing.
 
 Current stack:
 
@@ -8,60 +8,78 @@ Current stack:
 - **Qwen2.5-VL via Ollama** — local image understanding (`qwen2.5vl:3b` by default)
 - **EmbeddingGemma via Ollama** — semantic memory embeddings
 - **Obsidian** — durable Markdown memory
-- **SQLite** — saved desktop conversations and semantic-memory index
+- **SQLite** — saved conversations, semantic-memory index, and shared debug events
 - **ComfyUI** — local image generation
 - **whisper.cpp** — local speech-to-text
 - **Piper** — local text-to-speech
 - **FastAPI** — local API + UI server
-- **Tauri** — native Linux desktop shell around the exact same murn. UI
-- **Orbital** — optional browser bridge scaffold
+- **Tauri** — native Linux desktop shell with full + mini modes
+- **Orbital** — controllable Chromium browser through CDP + murn. extension integration
+
+## Intelligence
+
+murn. treats the underlying LLM as one component of the system rather than the entire product.
+
+Requests are classified locally without another model call:
+
+```text
+coding    -> low-temperature engineering/debug profile
+language  -> writing/translation/linguistic profile
+factual   -> conservative factual profile
+general   -> normal murn. personality + reliability rules
+```
+
+Tool routing also considers recent conversation context, so short follow-ups remain attached to the action already in progress. Explicit actions can trigger one internal tool-use retry when the LLM tries to answer around an available tool instead of actually using it.
 
 ## UI
 
-murn. ships the black / white / violet interface directly from the backend.
-
 ```text
-Desktop web   http://127.0.0.1:7331/
-Phone UI      http://127.0.0.1:7331/mobile
-API docs      http://127.0.0.1:7331/docs
+Desktop/LAN backend   :7331
+Native desktop backend 127.0.0.1:7332
+Phone companion       /mobile
+Mini voice UI         /mini
+API docs               /docs
 ```
 
 ### Native desktop app
 
-The PC version can be installed as a native Tauri application. It does **not** duplicate or redesign the frontend: the native window opens the exact same desktop UI served by FastAPI.
-
-The installer also creates `systemd --user` backend services, so opening `murn.` from the KDE launcher starts the local backend automatically when needed. The phone companion remains a normal browser page at `/mobile`.
-
-Full Arch Linux installation guide: [`docs/desktop-app.md`](docs/desktop-app.md).
-
-### Desktop interface
+The PC version can be installed as a native Tauri application. The installer creates `systemd --user` services so opening `murn.` from KDE starts the required local backend automatically.
 
 The desktop interface includes:
 
-- saved conversations in a left sidebar
-- returning to any previous conversation
-- search + local pinning
+- saved conversations + search + local pinning
+- delete-chat without touching long-term memory
 - streaming responses
-- visible tool cards
-- ComfyUI image results inside chat
-- local image analysis from attachments / drag-and-drop / clipboard paste
-- saved vision images rendered again when reopening a conversation
+- generated images inline
+- image analysis by attachment / drag-and-drop / clipboard paste
 - microphone input + Piper playback
-- live backend/model/voice/vision status
+- Orbital launch/integration controls
+- live global debug console
+- liquid-glass UI with reduced repaint overhead
+- **MINI** voice mode (`Ctrl+Shift+M`)
+
+### Mini desktop voice mode
+
+`MINI` shrinks the actual native KDE window to a compact voice core. It includes:
+
+- animated orb/waveform reacting to microphone input
+- the same waveform reacting to murn.'s Piper output
+- hold-to-talk
+- hands-free VAD / auto listen
+- native always-on-top toggle
+- expand back to the full desktop UI
+- conversation continuity between full and mini modes
 
 ### Phone companion
 
-The phone interface is intentionally voice-only. It sends audio to the PC, lets the PC run whisper.cpp → murn. → Piper, and plays the returned voice on the phone.
-
-Phone interactions use:
+The phone has two modes:
 
 ```text
-POST /v1/voice/remote
+ASSISTANT  -> voice + text + visible conversation + generated images
+VOICE MODE -> focused voice HUD with hold-to-talk / auto listen
 ```
 
-and are **ephemeral**: they are not inserted into the saved desktop conversation database.
-
-The mobile UI has the exact runtime states:
+Voice runtime states:
 
 ```text
 STANDBY
@@ -71,34 +89,59 @@ THINKING
 SPEAKING
 ```
 
-It supports hold-to-talk and hands-free auto listening with local voice activity detection.
+The orb reacts to both the user's microphone signal and murn.'s spoken response.
 
-Full desktop-web + phone + LAN + HTTPS setup: [`docs/ui.md`](docs/ui.md).
+## Tools
+
+murn. exposes capabilities as explicit tools rather than arbitrary shell access.
+
+Current families include:
+
+```text
+memory_search / memory_write
+calculate
+workspace_roots / workspace_list / workspace_read / workspace_search
+workspace_git_status / workspace_git_diff
+web_search / web_open
+browser_launch / browser_* Orbital tools
+generate_image
+```
+
+The coding workspace is **read-only**. It is restricted to configured roots, blocks path/symlink escapes, skips common binary/build/vendor data, disables external Git diff helpers, and puts a time/file budget on broad searches.
+
+Default configuration:
+
+```env
+MURN_WORKSPACE_ENABLED=true
+MURN_WORKSPACE_ROOTS=~/Projects;~/Orbital
+MURN_WORKSPACE_MAX_FILE_CHARS=40000
+```
+
+Only add roots that you are comfortable allowing the local agent to inspect.
 
 ## Architecture
 
 ```text
-                         murn. PC
+                              murn. PC
 
- Tauri app ────────┐
- desktop web ──────┤
-                   v
-                FastAPI
-          /      / | \       \
-    sessions vision agent    voice
-     SQLite   Ollama  |      /   \
-                     tools whisper Piper
-                    /   \
-               Obsidian ComfyUI
-
- phone UI ──LAN/HTTPS──> /v1/voice/remote
-                             |
-                             └── ephemeral / not saved
+ full Tauri UI ─────┐
+ mini voice UI ─────┤
+ desktop web ───────┤
+ phone /mobile ─────┤
+ Orbital extension ─┤
+                    v
+                 FastAPI
+        /       /    |      \        \
+ sessions   vision  agent   voice    debug
+ SQLite     Ollama    |    whisper   SQLite
+                      |      Piper
+                     tools
+      /        /       |        \          \
+ Obsidian   ComfyUI    web    Orbital    workspace
+ memory               HTTP      CDP      read-only
 ```
 
 ## Quick start
-
-Clone and create the local environment:
 
 ```bash
 git clone https://github.com/decodxr/murn..git ~/Projects/murn
@@ -127,21 +170,15 @@ ollama pull embeddinggemma
 ollama pull qwen2.5vl:3b
 ```
 
-Configure your Obsidian vault, ComfyUI workflow, whisper.cpp model, Piper voice, and optional vision model override in `.env`.
+Configure Obsidian, ComfyUI, whisper.cpp, Piper, Orbital, and allowed workspace roots in `.env`.
 
-Start murn. manually for development:
+For development:
 
 ```bash
 uvicorn murn.main:app --reload --host 127.0.0.1 --port 7331
 ```
 
-Then open:
-
-```text
-http://127.0.0.1:7331
-```
-
-For the native desktop application instead, see [`docs/desktop-app.md`](docs/desktop-app.md).
+For the native desktop application, run the desktop installer documented in [`docs/desktop-app.md`](docs/desktop-app.md).
 
 ## Health
 
@@ -149,7 +186,7 @@ For the native desktop application instead, see [`docs/desktop-app.md`](docs/des
 curl http://127.0.0.1:7331/health
 ```
 
-The response includes status for Ollama, vision, embeddings, ComfyUI, STT, TTS, and the UI.
+The response includes Ollama, vision, embeddings, ComfyUI, browser, workspace, adaptive-intelligence, STT/TTS, debug and UI state.
 
 ## Chat and sessions
 
@@ -159,14 +196,6 @@ Normal chat:
 curl -X POST http://127.0.0.1:7331/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"message":"Olá murn."}'
-```
-
-The response includes a `session_id`. Reuse it to continue the same persistent conversation.
-
-List sessions:
-
-```bash
-curl http://127.0.0.1:7331/v1/sessions
 ```
 
 Streaming chat:
@@ -187,52 +216,37 @@ Install the default vision model:
 ollama pull qwen2.5vl:3b
 ```
 
-In the desktop app you can then:
-
-- click the attachment icon
-- drag a PNG/JPEG/WebP image onto the composer
-- paste a screenshot directly from the clipboard
-
-Ask questions such as:
-
-```text
-analisa esse erro
-leia o texto desse print
-explique esse gráfico
-o que aparece nessa foto?
-```
-
-Vision requests use:
+The desktop UI supports attachment, drag-and-drop and clipboard screenshots. Vision requests use:
 
 ```text
 POST /v1/vision/chat
 GET  /v1/vision/files/{filename}
 ```
 
-The normal text LLM is unloaded before vision so both models do not compete for VRAM. The vision model uses `keep_alive=0` and is released immediately after each analysis.
+The normal text LLM is unloaded before vision so both models do not compete for VRAM.
 
 Full guide: [`docs/vision.md`](docs/vision.md).
 
 ## Semantic Obsidian memory
 
-Build/update the semantic index:
+Reindex:
 
 ```bash
 curl -X POST http://127.0.0.1:7331/v1/memory/reindex
 ```
 
-Search by meaning rather than exact wording:
+Search:
 
 ```bash
 curl --get http://127.0.0.1:7331/v1/memory/search \
   --data-urlencode 'q=qual navegador eu estou desenvolvendo?'
 ```
 
-Obsidian stays the source of truth. The local vector cache lives in `.murn/memory_embeddings.db` and can be rebuilt.
+Obsidian stays the source of truth. The vector cache lives in `.murn/memory_embeddings.db` and can be rebuilt.
 
 ## Image generation
 
-After exporting and configuring a ComfyUI API workflow:
+After configuring a ComfyUI API workflow:
 
 ```bash
 curl -X POST http://127.0.0.1:7331/v1/images/generate \
@@ -240,13 +254,11 @@ curl -X POST http://127.0.0.1:7331/v1/images/generate \
   -d '{"prompt":"a quiet rainy street at night"}'
 ```
 
-The agent can also call image generation as a tool from chat, and the desktop UI displays the generated image inline.
+The agent can call `generate_image` from chat and the clients render results inline. For tool-driven generation, resident chat/embedding models are released before ComfyUI competes for GPU memory.
 
 Full guide: [`docs/images.md`](docs/images.md).
 
 ## Local voice
-
-Voice API:
 
 ```text
 POST /v1/audio/transcribe
@@ -256,30 +268,39 @@ POST /v1/voice/chat
 POST /v1/voice/remote
 ```
 
-Full Arch Linux setup and model downloads: [`docs/voice.md`](docs/voice.md).
-
-Standalone continuous microphone client:
-
-```fish
-murn-voice
-```
-
 Voice path:
 
 ```text
 audio -> ffmpeg -> whisper.cpp -> murn. -> Piper -> WAV
 ```
 
+Full guide: [`docs/voice.md`](docs/voice.md).
+
+## Debug mode
+
+Debug traces are shared between the desktop and phone backend processes through `.murn/debug_events.db`.
+
+The console exposes operational reasoning rather than hidden chain-of-thought: request source, selected profile, tool routing, context size, tool arguments/results, first-token latency, total time, VRAM events and errors.
+
 ## Current safety model
 
-murn. does **not** give the language model arbitrary shell access. Capabilities are exposed through explicit providers/tools so filesystem, terminal, Orbital, vision, and other integrations can each receive their own permissions and limits.
+murn. does **not** give the LLM arbitrary shell access. Capabilities are explicit providers/tools with their own bounds.
 
-The phone companion is intended for a trusted local network. The development server does not yet provide public-internet authentication, so do not expose it directly to the internet.
+- web page content is untrusted
+- Orbital CDP stays loopback-only
+- consequential browser actions require confirmation when not already explicitly authorized
+- workspace inspection is read-only and allowlisted
+- debug logs are local
+- the LAN backend is intended for a trusted local network and should not be exposed directly to the public internet
+
+## v0.14 notes
+
+See [`docs/v0.14-overhaul.md`](docs/v0.14-overhaul.md) for the adaptive-intelligence, tool-recovery, workspace and mini-mode changes.
 
 ## Roadmap
 
 - streaming TTS while the model is still answering
 - interrupt / barge-in while murn. is speaking
-- Orbital native AI bridge
+- optional specialist local model routing for coding/general reasoning
+- controlled file-edit tools with explicit review/approval
 - multi-image vision requests
-- controlled filesystem and terminal tools
