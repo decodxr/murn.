@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +64,6 @@ class WorkspaceProvider:
     @staticmethod
     def _git_env() -> dict[str, str]:
         env = os.environ.copy()
-        # Keep fixed read-only git inspection from inheriting user-level helpers.
         env["GIT_CONFIG_NOSYSTEM"] = "1"
         env["GIT_CONFIG_GLOBAL"] = os.devnull
         env["GIT_OPTIONAL_LOCKS"] = "0"
@@ -144,7 +144,14 @@ class WorkspaceProvider:
             "truncated": truncated,
         }
 
-    def search(self, query: str, path: str | None = None, limit: int = 40) -> dict[str, Any]:
+    def search(
+        self,
+        query: str,
+        path: str | None = None,
+        limit: int = 40,
+        max_files: int = 8000,
+        max_seconds: float = 8.0,
+    ) -> dict[str, Any]:
         needle = str(query or "").strip()
         if not needle:
             raise ValueError("Search query is empty.")
@@ -152,10 +159,18 @@ class WorkspaceProvider:
         if not base.is_dir():
             base = base.parent
         limit = max(1, min(120, int(limit)))
+        max_files = max(100, min(50000, int(max_files)))
+        max_seconds = max(0.5, min(30.0, float(max_seconds)))
         lowered = needle.lower()
         results: list[dict[str, Any]] = []
+        scanned_files = 0
+        deadline = time.monotonic() + max_seconds
+        budget_exhausted = False
 
         for root, dirs, files in os.walk(base, followlinks=False):
+            if time.monotonic() >= deadline or scanned_files >= max_files:
+                budget_exhausted = True
+                break
             dirs[:] = [
                 name
                 for name in dirs
@@ -164,9 +179,13 @@ class WorkspaceProvider:
             for filename in files:
                 if len(results) >= limit:
                     break
+                if time.monotonic() >= deadline or scanned_files >= max_files:
+                    budget_exhausted = True
+                    break
                 file_path = Path(root) / filename
                 if file_path.is_symlink() or file_path.suffix.lower() in _SKIP_SUFFIXES:
                     continue
+                scanned_files += 1
                 try:
                     safe_file = self._allowed(file_path)
                     if safe_file.stat().st_size > 1_000_000:
@@ -183,9 +202,17 @@ class WorkspaceProvider:
                                     break
                 except (OSError, ValueError):
                     continue
-            if len(results) >= limit:
+            if len(results) >= limit or budget_exhausted:
                 break
-        return {"base": str(base), "query": needle, "results": results, "truncated": len(results) >= limit}
+
+        return {
+            "base": str(base),
+            "query": needle,
+            "results": results,
+            "scanned_files": scanned_files,
+            "budget_exhausted": budget_exhausted,
+            "truncated": len(results) >= limit or budget_exhausted,
+        }
 
     def _git_root(self, path: str | None = None) -> Path:
         base = self._resolve(path)
