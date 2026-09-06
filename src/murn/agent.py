@@ -14,6 +14,11 @@ Não soe como chatbot corporativo. Não comece com confirmações genéricas, n�
 termine com frases de atendimento. Seja útil, preciso e honesto sobre ações e ferramentas.
 """
 
+# Recent conversation remains in the model context. Durable facts belong in the
+# long-term Obsidian memory instead of making every request slower forever.
+HISTORY_MAX_MESSAGES = 24
+HISTORY_MAX_CHARS = 18000
+
 
 class Agent:
     def __init__(
@@ -37,6 +42,25 @@ class Agent:
             return SYSTEM_PROMPT_FALLBACK
         return prompt or SYSTEM_PROMPT_FALLBACK
 
+    @staticmethod
+    def _recent_history(history: list[dict[str, str]] | None) -> list[dict[str, str]]:
+        if not history:
+            return []
+
+        selected: list[dict[str, str]] = []
+        used_chars = 0
+        for item in reversed(history[-HISTORY_MAX_MESSAGES:]):
+            content = str(item.get("content") or "")
+            size = len(content)
+            if selected and used_chars + size > HISTORY_MAX_CHARS:
+                break
+            selected.append(item)
+            used_chars += size
+            if used_chars >= HISTORY_MAX_CHARS:
+                break
+        selected.reverse()
+        return selected
+
     def _messages(
         self,
         message: str,
@@ -49,7 +73,7 @@ class Agent:
         guidance = tool_guidance(tool_definitions or [])
         if guidance:
             messages.append({"role": "system", "content": guidance})
-        messages.extend(history or [])
+        messages.extend(self._recent_history(history))
         messages.append({"role": "user", "content": message})
         return messages
 
