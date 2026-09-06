@@ -2,7 +2,14 @@
   const button = document.querySelector('#open-mini');
   if (!button) return;
 
+  function rememberActiveSession() {
+    const active = document.querySelector('.session-item.active');
+    const sessionId = active?.dataset?.sessionId;
+    if (sessionId) localStorage.setItem('murn:mini-session', sessionId);
+  }
+
   async function enterMini() {
+    rememberActiveSession();
     const invoke = window.__TAURI__?.core?.invoke;
     if (invoke) {
       try {
