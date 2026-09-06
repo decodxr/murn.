@@ -56,6 +56,8 @@ class WorkspaceProvider:
             resolved = (root / candidate).resolve()
             if resolved.exists():
                 return self._allowed(resolved)
+        if not self.roots:
+            raise ValueError("No workspace root is configured.")
         return self._allowed((self.roots[0] / candidate).resolve())
 
     def roots_info(self) -> dict[str, Any]:
@@ -76,22 +78,34 @@ class WorkspaceProvider:
             if len(items) >= limit or level > depth:
                 return
             try:
-                children = sorted(directory.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+                children = sorted(
+                    directory.iterdir(),
+                    key=lambda item: (not item.is_dir(), item.name.lower()),
+                )
             except OSError:
                 return
+
             for child in children:
                 if len(items) >= limit:
                     break
-                if child.name in _SKIP_DIRS:
+                if child.name in _SKIP_DIRS or child.is_symlink():
                     continue
-                rel = child.relative_to(base)
+                try:
+                    safe_child = self._allowed(child)
+                    is_dir = safe_child.is_dir()
+                    is_file = safe_child.is_file()
+                    size = safe_child.stat().st_size if is_file else None
+                    rel = safe_child.relative_to(base)
+                except (OSError, ValueError):
+                    continue
+
                 items.append({
                     "path": str(rel),
-                    "type": "dir" if child.is_dir() else "file",
-                    "size": child.stat().st_size if child.is_file() else None,
+                    "type": "dir" if is_dir else "file",
+                    "size": size,
                 })
-                if child.is_dir() and level < depth:
-                    walk(child, level + 1)
+                if is_dir and level < depth:
+                    walk(safe_child, level + 1)
 
         walk(base, 0)
         return {"base": str(base), "items": items, "truncated": len(items) >= limit}
@@ -132,28 +146,33 @@ class WorkspaceProvider:
         lowered = needle.lower()
         results: list[dict[str, Any]] = []
 
-        for root, dirs, files in os.walk(base):
-            dirs[:] = [name for name in dirs if name not in _SKIP_DIRS]
+        for root, dirs, files in os.walk(base, followlinks=False):
+            dirs[:] = [
+                name
+                for name in dirs
+                if name not in _SKIP_DIRS and not (Path(root) / name).is_symlink()
+            ]
             for filename in files:
                 if len(results) >= limit:
                     break
                 file_path = Path(root) / filename
-                if file_path.suffix.lower() in _SKIP_SUFFIXES:
+                if file_path.is_symlink() or file_path.suffix.lower() in _SKIP_SUFFIXES:
                     continue
                 try:
-                    if file_path.stat().st_size > 1_000_000:
+                    safe_file = self._allowed(file_path)
+                    if safe_file.stat().st_size > 1_000_000:
                         continue
-                    with file_path.open("r", encoding="utf-8", errors="replace") as handle:
+                    with safe_file.open("r", encoding="utf-8", errors="replace") as handle:
                         for line_no, line in enumerate(handle, 1):
                             if lowered in line.lower():
                                 results.append({
-                                    "path": str(file_path),
+                                    "path": str(safe_file),
                                     "line": line_no,
                                     "text": line.rstrip()[:500],
                                 })
                                 if len(results) >= limit:
                                     break
-                except OSError:
+                except (OSError, ValueError):
                     continue
             if len(results) >= limit:
                 break
@@ -195,4 +214,10 @@ class WorkspaceProvider:
         truncated = len(diff) > max_chars
         if truncated:
             diff = diff[:max_chars] + "\n…"
-        return {"root": str(root), "diff": diff, "staged": staged, "truncated": truncated, "ok": result.returncode == 0}
+        return {
+            "root": str(root),
+            "diff": diff,
+            "staged": staged,
+            "truncated": truncated,
+            "ok": result.returncode == 0,
+        }
