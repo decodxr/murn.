@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from murn.providers.ollama import OllamaProvider
+from murn.tool_router import select_tool_definitions
 from murn.tools.registry import ToolRegistry
 
 
@@ -73,6 +74,9 @@ class Agent:
         safe["display"] = "Rendered inline by the murn. client. Do not output a URL."
         return safe
 
+    def _tool_definitions(self, message: str) -> list[dict[str, Any]]:
+        return select_tool_definitions(message, self.tools.definitions())
+
     async def _execute_tool(self, name: str, arguments: Any) -> dict[str, Any]:
         # Ollama and ComfyUI share the same NVIDIA GPU. Release the resident
         # language model before image generation so ComfyUI can use the VRAM.
@@ -82,9 +86,10 @@ class Agent:
 
     async def run(self, message: str, history: list[dict[str, str]] | None = None) -> str:
         messages = self._messages(message, history)
+        tool_definitions = self._tool_definitions(message)
 
         for _ in range(self.max_steps):
-            assistant = await self.llm.chat(messages, self.tools.definitions())
+            assistant = await self.llm.chat(messages, tool_definitions)
             tool_calls = assistant.get("tool_calls") or []
 
             if not tool_calls:
@@ -119,6 +124,7 @@ class Agent:
         history: list[dict[str, str]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         messages = self._messages(message, history)
+        tool_definitions = self._tool_definitions(message)
         visible_parts: list[str] = []
 
         for _ in range(self.max_steps):
@@ -126,7 +132,7 @@ class Agent:
             tool_calls: list[dict[str, Any]] = []
             seen_tool_calls: set[str] = set()
 
-            async for chunk in self.llm.stream_chat(messages, self.tools.definitions()):
+            async for chunk in self.llm.stream_chat(messages, tool_definitions):
                 assistant_chunk = chunk.get("message") or {}
                 content = assistant_chunk.get("content") or ""
                 if content:
