@@ -19,8 +19,6 @@ class OllamaProvider:
         self.keep_alive = keep_alive
         self.num_ctx = max(1024, int(num_ctx))
         self.num_predict = max(64, int(num_predict))
-        # Reuse one HTTP connection pool instead of creating a new TCP client
-        # for every token stream / tool step.
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(180.0, connect=10.0),
             limits=httpx.Limits(max_connections=12, max_keepalive_connections=6),
@@ -42,6 +40,24 @@ class OllamaProvider:
         try:
             response = await self._client.get(f"{self.base_url}/api/tags", timeout=3)
             return response.is_success
+        except httpx.HTTPError:
+            return False
+
+    async def warm(self) -> bool:
+        """Load the configured model without making startup wait for generation."""
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": "",
+                    "stream": False,
+                    "keep_alive": self.keep_alive,
+                },
+                timeout=180,
+            )
+            response.raise_for_status()
+            return True
         except httpx.HTTPError:
             return False
 
