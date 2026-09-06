@@ -1,0 +1,68 @@
+/* Performance layer for WebKitGTK/NVIDIA.
+   Keeps the visual identity while avoiding expensive full-window repaints. */
+
+:root {
+  --glass-blur: blur(16px) saturate(132%) contrast(102%);
+}
+
+/* The drifting full-screen blurred layer looked nice but forced continuous
+   composition of almost the entire window. Keep the light field static. */
+.desktop-body::after {
+  animation: none !important;
+  filter: blur(24px) !important;
+  opacity: .52 !important;
+}
+
+/* Nested backdrop filters multiply compositor work. These cards already sit
+   inside a glass panel, so a translucent fill gives nearly the same look. */
+.tool-card,
+.voice-card,
+.vision-processing,
+.vision-attachment-preview {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Masking a large scrolling layer is costly on WebKitGTK. */
+.message-list {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  contain: layout paint style;
+}
+
+.session-groups {
+  contain: layout paint style;
+}
+
+/* Off-screen chat messages do not need to be painted until they approach the
+   viewport. Unsupported WebKit versions simply ignore content-visibility. */
+.message {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 82px;
+}
+
+/* Isolate the two major glass surfaces from unrelated repaint regions. */
+.sidebar,
+.conversation {
+  contain: layout paint;
+}
+
+/* Avoid expensive smooth scrolling while tokens are streaming. */
+.message-list,
+.session-groups {
+  scroll-behavior: auto !important;
+}
+
+/* Small shadows are enough once the glass border/highlight is present. */
+.panel {
+  box-shadow:
+    0 16px 44px rgba(0,0,0,.28),
+    inset 0 1px 0 rgba(255,255,255,.055) !important;
+}
+
+.composer {
+  box-shadow:
+    0 -8px 28px rgba(0,0,0,.17),
+    0 10px 28px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.085) !important;
+}
