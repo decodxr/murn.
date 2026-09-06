@@ -14,6 +14,9 @@ class Settings(BaseSettings):
 
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "llama3.1:8b"
+    ollama_keep_alive: str = "30m"
+    ollama_num_ctx: int = 4096
+    ollama_num_predict: int = 512
     embedding_model: str = "embeddinggemma"
     vision_model: str = "qwen2.5vl:3b"
     vision_max_mb: int = 20
@@ -33,6 +36,8 @@ class Settings(BaseSettings):
     # bound to loopback only; it can control the logged-in browser session.
     browser_enabled: bool = True
     orbital_url: str = "http://127.0.0.1:9222"
+    orbital_launcher: Path = Path("~/.local/bin/orbital-murn").expanduser()
+    desktop_launcher: Path = Path("~/.local/bin/murn-desktop").expanduser()
     browser_timeout_seconds: float = 12.0
     browser_snapshot_max_chars: int = 12000
     browser_snapshot_max_elements: int = 120
