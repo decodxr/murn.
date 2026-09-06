@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orbital</title>
+  <link rel="stylesheet" href="newtab.css" />
+</head>
+<body>
+  <div class="orbital-shell">
+    <header class="topbar glass">
+      <div class="brand-block">
+        <div class="brand">orbital<span>.</span></div>
+        <div class="sub">BROWSER / MURN LINK</div>
+      </div>
+      <div class="status-row">
+        <span class="status-dot" id="murn-dot"></span>
+        <span id="murn-status">murn. checking</span>
+        <span class="slash">/</span>
+        <span>local</span>
+        <span class="slash">/</span>
+        <span>private</span>
+        <button id="open-murn" class="top-button">murn.</button>
+      </div>
+    </header>
+
+    <main class="hero">
+      <section class="hero-card glass">
+        <div class="eyebrow">ORBITAL / COMMAND</div>
+        <h1>where to<span>?</span></h1>
+        <p>search the web or start with <code>murn.</code> to talk to your local AI.</p>
+
+        <form id="search-form" class="search-box">
+          <span class="search-icon">⌕</span>
+          <input id="search-input" autocomplete="off" autofocus placeholder="search or type murn. ..." />
+          <span class="shortcut">ENTER</span>
+        </form>
+
+        <div class="quick-actions">
+          <button data-url="https://github.com">github</button>
+          <button data-url="https://www.youtube.com">youtube</button>
+          <button data-url="https://www.reddit.com">reddit</button>
+          <button id="ask-murn">ask murn.</button>
+        </div>
+      </section>
+
+      <aside class="side-card glass">
+        <div class="card-label">OPEN TABS</div>
+        <div id="tabs" class="tabs-list"><span class="muted">loading…</span></div>
+        <div class="divider"></div>
+        <div class="card-label">COMMANDS</div>
+        <div class="command-list">
+          <div><kbd>murn.</kbd><span>ask the assistant</span></div>
+          <div><kbd>Ctrl L</kbd><span>focus address bar</span></div>
+          <div><kbd>Ctrl T</kbd><span>new orbital tab</span></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      <span>ORBITAL</span>
+      <span>·</span>
+      <span>CONNECTED TO MURN.</span>
+      <span class="grow"></span>
+      <span id="clock">--:--</span>
+    </footer>
+  </div>
+
+  <script src="newtab.js" defer></script>
+</body>
+</html>
