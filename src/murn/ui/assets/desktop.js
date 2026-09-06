@@ -13,6 +13,7 @@
     recordingStream: null,
     toolCounter: 0,
     pendingTools: new Map(),
+    scrollFrame: 0,
     pins: new Set(JSON.parse(localStorage.getItem('murn:pins') || '[]')),
   };
 
@@ -114,6 +115,8 @@
       $('#desktop-voice').textContent = health.stt && health.tts ? 'voice ready' : 'voice off';
       $('#desktop-connection').textContent = 'connected';
       $('#settings-model').textContent = health.model || '—';
+      const vision = $('#settings-vision');
+      if (vision) vision.textContent = health.vision ? (health.vision_model || 'ready') : 'offline';
       $('#settings-ollama').textContent = health.ollama ? 'ready' : 'offline';
       $('#settings-comfy').textContent = health.comfyui ? 'ready' : 'offline';
       $('#settings-browser').textContent = health.browser ? 'orbital ready' : 'offline';
@@ -290,7 +293,9 @@
   }
 
   function scrollBottom() {
-    requestAnimationFrame(() => {
+    if (state.scrollFrame) return;
+    state.scrollFrame = requestAnimationFrame(() => {
+      state.scrollFrame = 0;
       els.messageList.scrollTop = els.messageList.scrollHeight;
     });
   }
@@ -432,7 +437,17 @@
     const assistant = appendMessage('assistant', '');
     assistant.contentEl.classList.add('streaming-cursor');
     let finalText = '';
+    let renderFrame = 0;
     state.pendingTools.clear();
+
+    const scheduleAssistantRender = () => {
+      if (renderFrame) return;
+      renderFrame = requestAnimationFrame(() => {
+        renderFrame = 0;
+        assistant.contentEl.innerHTML = formatContent(finalText);
+        scrollBottom();
+      });
+    };
 
     try {
       const payload = { message };
@@ -463,26 +478,30 @@
             state.currentSessionId = event.session_id;
           } else if (event.type === 'token') {
             finalText += event.content || '';
-            assistant.contentEl.innerHTML = formatContent(finalText);
+            scheduleAssistantRender();
           } else if (event.type === 'tool_start') {
             appendToolStart(assistant.body, event.name || 'tool', event.arguments || {});
           } else if (event.type === 'tool_result') {
             resolveTool(assistant.body, event.name || 'tool', event.result || {});
           } else if (event.type === 'done') {
             finalText = event.content ?? finalText;
-            assistant.contentEl.innerHTML = formatContent(finalText);
+            scheduleAssistantRender();
           } else if (event.type === 'error') {
             throw new Error(event.error || 'stream error');
           }
-          scrollBottom();
         }
       }
 
+      if (renderFrame) cancelAnimationFrame(renderFrame);
+      renderFrame = 0;
+      assistant.contentEl.innerHTML = formatContent(finalText);
+      scrollBottom();
       assistant.contentEl.classList.remove('streaming-cursor');
       await loadSessions();
       const session = state.sessions.find((item) => item.id === state.currentSessionId);
       if (session) setConversationTitle(session.title);
     } catch (error) {
+      if (renderFrame) cancelAnimationFrame(renderFrame);
       assistant.contentEl.classList.remove('streaming-cursor');
       assistant.contentEl.textContent = `error: ${error.message}`;
       toast(error.message);
@@ -589,7 +608,7 @@
   els.allConversations?.addEventListener('click', () => {
     els.search.value = '';
     renderSessions();
-    els.sessionGroups.scrollTo({ top: 0, behavior: 'smooth' });
+    els.sessionGroups.scrollTo({ top: 0, behavior: 'auto' });
   });
 
   els.cancelDelete?.addEventListener('click', closeDeleteDialog);
