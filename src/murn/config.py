@@ -17,28 +17,23 @@ class Settings(BaseSettings):
     ollama_keep_alive: str = "30m"
     ollama_num_ctx: int = 4096
     ollama_num_predict: int = 512
-    # Slightly conservative sampling keeps the personality while reducing
-    # confident made-up details on a small local model.
     ollama_temperature: float = 0.45
     ollama_top_p: float = 0.9
     embedding_model: str = "embeddinggemma"
     vision_model: str = "qwen2.5vl:3b"
     vision_max_mb: int = 20
 
-    # Identity facts are separate from the editable personality/behavior prompt.
-    # Both are read fresh on every request, so edits take effect immediately.
+    # Identity and behavior prompts are read fresh on every request.
     identity_prompt_path: Path = Path("prompts/identity.md")
     system_prompt_path: Path = Path("prompts/system.md")
 
-    # Public internet research. web_open deliberately blocks localhost/private LAN
-    # targets; this gives the model research access without raw access to local services.
+    # Public internet research.
     web_enabled: bool = True
     web_max_results: int = 6
     web_open_max_chars: int = 12000
     web_timeout_seconds: float = 15.0
 
-    # Orbital/Chromium control through Chrome DevTools Protocol. Keep this endpoint
-    # bound to loopback only; it can control the logged-in browser session.
+    # Orbital/Chromium control through Chrome DevTools Protocol.
     browser_enabled: bool = True
     orbital_url: str = "http://127.0.0.1:9222"
     orbital_launcher: Path = Path("~/.local/bin/orbital-murn").expanduser()
@@ -46,6 +41,11 @@ class Settings(BaseSettings):
     browser_timeout_seconds: float = 12.0
     browser_snapshot_max_chars: int = 12000
     browser_snapshot_max_elements: int = 120
+
+    # Safe read-only coding workspace inspection. Semicolon-separated roots.
+    workspace_enabled: bool = True
+    workspace_roots: str = "~/Projects;~/Orbital"
+    workspace_max_file_chars: int = 40000
 
     obsidian_vault: Path = Path("~/Documents/Obsidian").expanduser()
     obsidian_memory_dir: str = "murn"
