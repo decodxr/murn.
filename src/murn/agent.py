@@ -10,10 +10,17 @@ from murn.tool_router import select_tool_definitions, tool_guidance
 from murn.tools.registry import ToolRegistry
 
 
+IDENTITY_PROMPT_FALLBACK = """# murn. / identity
+Seu nome é murn. Você é uma IA pessoal local-first criada pelo próprio desenvolvedor/usuário deste projeto.
+Não atribua sua criação a nenhuma empresa ou pessoa externa. Se não souber um fato sobre sua própria
+origem, diga que não tem esse dado em vez de inventar.
+"""
+
 SYSTEM_PROMPT_FALLBACK = """Você é murn., uma IA pessoal local.
 Fale em português brasileiro natural, direto e com personalidade.
 Não soe como chatbot corporativo. Não comece com confirmações genéricas, não repita o pedido e não
 termine com frases de atendimento. Seja útil, preciso e honesto sobre ações e ferramentas.
+Se não souber um fato, admita a incerteza; nunca preencha lacunas com detalhes inventados.
 """
 
 HISTORY_MAX_MESSAGES = 20
@@ -28,20 +35,29 @@ class Agent:
         tools: ToolRegistry,
         max_steps: int = 8,
         system_prompt_path: Path | None = None,
+        identity_prompt_path: Path | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
         self.max_steps = max_steps
         self.system_prompt_path = system_prompt_path or Path("prompts/system.md")
+        self.identity_prompt_path = identity_prompt_path or Path("prompts/identity.md")
+
+    @staticmethod
+    def _read_prompt(path: Path, fallback: str) -> str:
+        try:
+            prompt = path.expanduser().read_text(encoding="utf-8").strip()
+        except OSError:
+            return fallback
+        return prompt or fallback
+
+    def identity_prompt(self) -> str:
+        """Load stable self-identity facts fresh for every request."""
+        return self._read_prompt(self.identity_prompt_path, IDENTITY_PROMPT_FALLBACK)
 
     def system_prompt(self) -> str:
-        """Load the editable base prompt fresh for every request."""
-        path = self.system_prompt_path.expanduser()
-        try:
-            prompt = path.read_text(encoding="utf-8").strip()
-        except OSError:
-            return SYSTEM_PROMPT_FALLBACK
-        return prompt or SYSTEM_PROMPT_FALLBACK
+        """Load the editable personality/behavior prompt fresh for every request."""
+        return self._read_prompt(self.system_prompt_path, SYSTEM_PROMPT_FALLBACK)
 
     @staticmethod
     def _recent_history(history: list[dict[str, str]] | None) -> list[dict[str, str]]:
@@ -69,6 +85,7 @@ class Agent:
         tool_definitions: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [
+            {"role": "system", "content": self.identity_prompt()},
             {"role": "system", "content": self.system_prompt()},
         ]
         guidance = tool_guidance(tool_definitions or [])
