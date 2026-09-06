@@ -116,8 +116,30 @@ def _browser_intent(message: str, history: list[dict[str, Any]] | None) -> bool:
 def _calculator_intent(text: str) -> bool:
     if _has_any(text, CALCULATOR):
         return True
-    # Obvious arithmetic expressions should not be left to probabilistic token prediction.
     return bool(re.search(r"\b\d+(?:[.,]\d+)?\s*[+*/%-]\s*\d", text))
+
+
+def _required_browser_action(text: str) -> str:
+    """Return one concrete browser action that must happen for the user's request.
+
+    Snapshot/status remain available as helper tools, but the retry guard should
+    never require every possible browser operation as if they were conjunctive.
+    """
+    if "orbital" in text and _has_any(text, ("abre", "abra", "inicia", "inicie", "start")):
+        return "browser_launch"
+    if _has_any(text, ("volta", "voltar", "back")):
+        return "browser_back"
+    if _has_any(text, ("avanca", "avancar", "forward")):
+        return "browser_forward"
+    if _has_any(text, ("rola", "scroll", "mais pra baixo", "mais pra cima")):
+        return "browser_scroll"
+    if _has_any(text, ("clica", "clique", "entra", "vai nesse", "primeiro", "segundo")):
+        return "browser_click"
+    if _has_any(text, ("digita", "digite", "escreve", "preenche", "pesquisa", "procura")):
+        return "browser_type"
+    if _has_any(text, ("abre o site", "abra o site", "abre youtube", "abra youtube", "abre github", "abra github", "abre google", "abra google", "abre esse", "abre isso", "http://", "https://", ".com", ".org", ".net")):
+        return "browser_navigate"
+    return "browser_snapshot"
 
 
 def required_tool_names(
@@ -137,12 +159,8 @@ def required_tool_names(
     if _calculator_intent(text):
         required.add("calculate")
 
-    browser_intent = _browser_intent(message, history)
-    if browser_intent:
-        if "orbital" in text and _has_any(text, ("abre", "abra", "inicia", "inicie", "start")):
-            required.add("browser_launch")
-        else:
-            required.update({"browser_snapshot", "browser_navigate", "browser_click", "browser_type", "browser_press"})
+    if _browser_intent(message, history):
+        required.add(_required_browser_action(text))
     elif _has_any(text, WEB_EXPLICIT):
         required.add("web_search")
 
