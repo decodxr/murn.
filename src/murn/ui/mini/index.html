@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#050608" />
+  <title>murn. mini</title>
+  <link rel="stylesheet" href="/ui/assets/mini.css?v=0.14.0" />
+</head>
+<body>
+  <main class="mini-shell" id="mini-shell" data-state="standby">
+    <header class="mini-header">
+      <div class="mini-brand">murn<span>.</span></div>
+      <div class="mini-window-actions">
+        <button id="mini-pin" type="button" title="always on top" aria-pressed="true">◆</button>
+        <button id="mini-expand" type="button" title="full murn.">↗</button>
+      </div>
+    </header>
+
+    <section class="mini-orb" id="mini-orb" data-state="standby">
+      <canvas id="mini-wave" width="720" height="420" aria-hidden="true"></canvas>
+      <div class="mini-orb-copy">
+        <strong id="mini-state">STANDBY</strong>
+        <span id="mini-detail">ready when you are</span>
+      </div>
+    </section>
+
+    <div class="mini-last" id="mini-last" aria-live="polite">
+      <span class="mini-last-role">murn.</span>
+      <span class="mini-last-text">voice core ready.</span>
+    </div>
+
+    <div class="mini-controls">
+      <button class="mini-talk" id="mini-talk" type="button">
+        <span class="mini-talk-icon">◖</span>
+        <span><strong>HOLD TO TALK</strong><small>release to send</small></span>
+      </button>
+      <button class="mini-auto" id="mini-auto" type="button" aria-pressed="false">
+        <span class="mini-auto-dot"></span>
+        <span><strong>AUTO</strong><small>hands free</small></span>
+      </button>
+    </div>
+
+    <footer class="mini-footer">
+      <span><i id="mini-connection"></i><b id="mini-connection-text">CONNECTING</b></span>
+      <span id="mini-model">LOCAL</span>
+    </footer>
+  </main>
+
+  <div class="mini-error" id="mini-error"></div>
+  <script src="/ui/assets/mini.js?v=0.14.0" defer></script>
+</body>
+</html>
