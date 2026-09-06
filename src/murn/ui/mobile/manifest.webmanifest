@@ -1,0 +1,20 @@
+{
+  "id": "/mobile",
+  "name": "murn. voice companion",
+  "short_name": "murn.",
+  "description": "Local voice companion for murn.",
+  "start_url": "/mobile",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#030406",
+  "theme_color": "#030406",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/ui/mobile/murn-mobile.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
