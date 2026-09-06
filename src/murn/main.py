@@ -1,13 +1,16 @@
+import asyncio
 import json
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from murn.agent import Agent
 from murn.config import settings
+from murn.integration import build_integration_router
 from murn.memory.obsidian import ObsidianMemory
 from murn.memory.semantic import SemanticMemory
 from murn.providers.comfyui import ComfyUIProvider
@@ -23,12 +26,24 @@ from murn.schemas import (
     SpeechRequest,
 )
 from murn.sessions import SessionStore
-from murn.tools.registry import ToolRegistry
+from murn.tools.integrated import IntegratedToolRegistry
 
+APP_VERSION = "0.10.0"
 UI_DIR = Path(__file__).parent / "ui"
-UI_VERSION = "0.9.1"
+UI_VERSION = "0.10.0"
 
-app = FastAPI(title="murn.", version="0.9.1")
+app = FastAPI(title="murn.", version=APP_VERSION)
+
+# The unpacked murn. Orbital extension talks to the loopback API directly.
+# Only chrome-extension:// origins are allowed cross-origin; ordinary websites
+# do not get blanket access to the local agent API.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^chrome-extension://[a-p]{32}$",
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 
@@ -44,7 +59,13 @@ async def disable_ui_cache(request: Request, call_next):
     return response
 
 
-llm = OllamaProvider(settings.ollama_url, settings.ollama_model)
+llm = OllamaProvider(
+    settings.ollama_url,
+    settings.ollama_model,
+    keep_alive=settings.ollama_keep_alive,
+    num_ctx=settings.ollama_num_ctx,
+    num_predict=settings.ollama_num_predict,
+)
 vision = OllamaVisionProvider(settings.ollama_url, settings.vision_model)
 embedding_provider = OllamaEmbeddingProvider(settings.ollama_url, settings.embedding_model)
 memory = ObsidianMemory(settings.obsidian_vault, settings.obsidian_memory_dir)
@@ -71,13 +92,14 @@ stt = WhisperCppProvider(
 )
 tts = PiperTTSProvider(settings.piper_model, settings.audio_dir)
 sessions = SessionStore(settings.session_db)
-tools = ToolRegistry(memory, semantic_memory, images, llm=llm)
+tools = IntegratedToolRegistry(memory, semantic_memory, images, llm=llm)
 agent = Agent(
     llm,
     tools,
     settings.agent_max_steps,
     settings.system_prompt_path,
 )
+app.include_router(build_integration_router(tools.browser))
 
 
 def _session_for(request: ChatRequest) -> tuple[str, list[dict[str, str]]]:
@@ -165,22 +187,44 @@ async def mobile_ui():
 
 @app.get("/health")
 async def health() -> dict[str, object]:
+    # These probes are independent; doing them in parallel makes the desktop
+    # status strip appear much faster than the old serial health check.
+    (
+        ollama_ok,
+        vision_ok,
+        embeddings_ok,
+        comfy_ok,
+        browser_ok,
+        stt_ok,
+        tts_ok,
+    ) = await asyncio.gather(
+        llm.health(),
+        vision.health(),
+        embedding_provider.health(),
+        images.health(),
+        tools.browser.health(),
+        stt.health(),
+        tts.health(),
+    )
+
     return {
         "murn": True,
-        "version": "0.9.1",
+        "version": APP_VERSION,
         "ui_version": UI_VERSION,
         "model": settings.ollama_model,
-        "ollama": await llm.health(),
+        "ollama": ollama_ok,
+        "ollama_keep_alive": settings.ollama_keep_alive,
         "vision_model": settings.vision_model,
-        "vision": await vision.health(),
+        "vision": vision_ok,
         "embedding_model": settings.embedding_model,
-        "embeddings": await embedding_provider.health(),
-        "comfyui": await images.health(),
+        "embeddings": embeddings_ok,
+        "comfyui": comfy_ok,
         "comfyui_configured": images.configured,
-        "browser": await tools.browser.health(),
+        "browser": browser_ok,
         "orbital_url": settings.orbital_url,
-        "stt": await stt.health(),
-        "tts": await tts.health(),
+        "orbital_launcher": str(settings.orbital_launcher),
+        "stt": stt_ok,
+        "tts": tts_ok,
         "whisper_model": str(settings.whisper_model),
         "piper_model": str(settings.piper_model),
         "obsidian_vault": str(settings.obsidian_vault),
