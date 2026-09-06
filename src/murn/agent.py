@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from murn.providers.ollama import OllamaProvider
-from murn.tool_router import select_tool_definitions
+from murn.tool_router import select_tool_definitions, tool_guidance
 from murn.tools.registry import ToolRegistry
 
 
@@ -29,11 +29,7 @@ class Agent:
         self.system_prompt_path = system_prompt_path or Path("prompts/system.md")
 
     def system_prompt(self) -> str:
-        """Load the editable system prompt fresh for every request.
-
-        This is intentionally not cached: editing prompts/system.md should change
-        murn.'s next reply without requiring a backend restart.
-        """
+        """Load the editable base prompt fresh for every request."""
         path = self.system_prompt_path.expanduser()
         try:
             prompt = path.read_text(encoding="utf-8").strip()
@@ -45,10 +41,14 @@ class Agent:
         self,
         message: str,
         history: list[dict[str, str]] | None = None,
+        tool_definitions: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt()},
         ]
+        guidance = tool_guidance(tool_definitions or [])
+        if guidance:
+            messages.append({"role": "system", "content": guidance})
         messages.extend(history or [])
         messages.append({"role": "user", "content": message})
         return messages
@@ -78,15 +78,13 @@ class Agent:
         return select_tool_definitions(message, self.tools.definitions())
 
     async def _execute_tool(self, name: str, arguments: Any) -> dict[str, Any]:
-        # Ollama and ComfyUI share the same NVIDIA GPU. Release the resident
-        # language model before image generation so ComfyUI can use the VRAM.
         if name == "generate_image":
             await self.llm.unload()
         return await self.tools.execute(name, arguments)
 
     async def run(self, message: str, history: list[dict[str, str]] | None = None) -> str:
-        messages = self._messages(message, history)
         tool_definitions = self._tool_definitions(message)
+        messages = self._messages(message, history, tool_definitions)
 
         for _ in range(self.max_steps):
             assistant = await self.llm.chat(messages, tool_definitions)
@@ -123,8 +121,8 @@ class Agent:
         message: str,
         history: list[dict[str, str]] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        messages = self._messages(message, history)
         tool_definitions = self._tool_definitions(message)
+        messages = self._messages(message, history, tool_definitions)
         visible_parts: list[str] = []
 
         for _ in range(self.max_steps):
