@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     session_id: str | None = None
     history: list[Message] = Field(default_factory=list)
+    source: str = Field(default="unknown", max_length=40)
 
 
 class ChatResponse(BaseModel):
