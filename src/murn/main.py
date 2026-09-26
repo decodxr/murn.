@@ -23,6 +23,8 @@ from murn.providers.vision import OllamaVisionProvider
 from murn.schemas import (
     ChatRequest,
     ChatResponse,
+    RPChatRequest,
+    RPChatResponse,
     ImageGenerateRequest,
     SessionCreateRequest,
     SpeechRequest,
@@ -289,6 +291,40 @@ async def delete_session(session_id: str):
 @app.post("/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     return await _chat_once(request)
+
+
+@app.post("/v1/rp/chat", response_model=RPChatResponse)
+async def rp_chat(request: RPChatRequest) -> RPChatResponse:
+    """Direct model path for RP/character simulation.
+
+    This intentionally bypasses murn.'s personal identity, request classifier,
+    tools and personal memory. The caller owns the system prompt and history.
+    """
+    messages=[item.model_dump() for item in request.messages]
+    _trace_id, trace_token = debug_bus.begin(request.source, messages[-1]["content"], None)
+    try:
+        debug_bus.emit("profile", "isolated RP mode", {
+            "messages": len(messages),
+            "temperature": request.temperature,
+            "top_p": request.top_p,
+        })
+        assistant = await llm.chat(
+            messages,
+            None,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            num_predict=request.num_predict,
+        )
+        answer=str(assistant.get("content") or "").strip()
+        if not answer:
+            raise ValueError("O modelo retornou uma resposta vazia.")
+        debug_bus.emit("done", "isolated RP response complete", {"output_chars": len(answer)})
+        return RPChatResponse(message=answer, model=settings.ollama_model)
+    except Exception as exc:
+        debug_bus.emit("error", "isolated RP response failed", {"error": str(exc)})
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        debug_bus.end_scope(trace_token)
 
 
 @app.post("/v1/chat/stream")
