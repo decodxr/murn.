@@ -314,12 +314,13 @@ async def rp_chat(request: RPChatRequest) -> RPChatResponse:
             temperature=request.temperature,
             top_p=request.top_p,
             num_predict=request.num_predict,
+            model=request.model,
         )
         answer=str(assistant.get("content") or "").strip()
         if not answer:
             raise ValueError("O modelo retornou uma resposta vazia.")
         debug_bus.emit("done", "isolated RP response complete", {"output_chars": len(answer)})
-        return RPChatResponse(message=answer, model=settings.ollama_model)
+        return RPChatResponse(message=answer, model=request.model or settings.ollama_model)
     except Exception as exc:
         debug_bus.emit("error", "isolated RP response failed", {"error": str(exc)})
         raise HTTPException(status_code=502, detail=str(exc)) from exc
