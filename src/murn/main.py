@@ -315,6 +315,7 @@ async def rp_chat(request: RPChatRequest) -> RPChatResponse:
             top_p=request.top_p,
             num_predict=request.num_predict,
             model=request.model,
+            think=False,
         )
         answer=str(assistant.get("content") or "").strip()
         if not answer:
