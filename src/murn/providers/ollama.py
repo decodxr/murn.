@@ -37,11 +37,12 @@ class OllamaProvider:
         top_p: float | None = None,
         num_predict: int | None = None,
         model: str | None = None,
+        think: bool | None = None,
     ) -> dict[str, Any]:
         temp = self.temperature if temperature is None else max(0.0, min(2.0, float(temperature)))
         nucleus = self.top_p if top_p is None else max(0.05, min(1.0, float(top_p)))
         predict = self.num_predict if num_predict is None else max(32, int(num_predict))
-        return {
+        payload = {
             "model": model or self.model,
             "messages": messages,
             "stream": stream,
@@ -53,6 +54,9 @@ class OllamaProvider:
                 "top_p": nucleus,
             },
         }
+        if think is not None:
+            payload["think"] = think
+        return payload
 
     async def health(self) -> bool:
         try:
@@ -101,6 +105,7 @@ class OllamaProvider:
         top_p: float | None = None,
         num_predict: int | None = None,
         model: str | None = None,
+        think: bool | None = None,
     ) -> dict[str, Any]:
         payload = self._payload(
             messages,
@@ -109,6 +114,7 @@ class OllamaProvider:
             top_p=top_p,
             num_predict=num_predict,
             model=model,
+            think=think,
         )
         if tools:
             payload["tools"] = tools
