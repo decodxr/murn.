@@ -27,6 +27,7 @@ class RPMessage(BaseModel):
 
 
 class RPChatRequest(BaseModel):
+    model: str | None = Field(default=None, min_length=1, max_length=200)
     messages: list[RPMessage] = Field(min_length=1, max_length=80)
     temperature: float | None = Field(default=None, ge=0, le=2)
     top_p: float | None = Field(default=None, ge=0.05, le=1)
